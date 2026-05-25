@@ -40,6 +40,25 @@ class OnlineScorer:
         self._streak: dict[str, int] = defaultdict(int)
         self._latest: dict[str, HealthResult] = {}
         self._latest_alarms: dict[str, list[AlarmEvent]] = defaultdict(list)
+        # 防抖：每个 asset 最小评分间隔 (ms)
+        self._last_score_ms: dict[str, int] = defaultdict(int)
+
+    def reset(self, asset_id: str | None = None) -> None:
+        """重置内部状态，支持单个资产或全部资产。"""
+        if asset_id is not None:
+            self._buf.pop(asset_id, None)
+            self._last_emit_level.pop(asset_id, None)
+            self._streak.pop(asset_id, None)
+            self._latest.pop(asset_id, None)
+            self._latest_alarms.pop(asset_id, None)
+            self._last_score_ms.pop(asset_id, None)
+        else:
+            self._buf.clear()
+            self._last_emit_level.clear()
+            self._streak.clear()
+            self._latest.clear()
+            self._latest_alarms.clear()
+            self._last_score_ms.clear()
 
     def latest(self, asset_id: str) -> HealthResult | None:
         return self._latest.get(asset_id)
@@ -50,18 +69,20 @@ class OnlineScorer:
     def ingest(self, p: TelemetryPoint) -> HealthResult | None:
         self._buf[p.asset_id].append(p)
 
-        # 每分钟边界触发一次打分：用 window_start_ms 判定
-        window_ms = self.window_s * 1000
-        if p.point != "temp_c":
-            # 用某个稳定点位当触发器，避免每个点位都算一次
+        # 防抖：每个 asset 最小 500ms 间隔评分一次
+        min_interval_ms = 500
+        last_ms = self._last_score_ms.get(p.asset_id, 0)
+        if p.ts_ms - last_ms < min_interval_ms:
             return None
+        self._last_score_ms[p.asset_id] = p.ts_ms
 
+        window_ms = self.window_s * 1000
         window_start = (p.ts_ms // window_ms) * window_ms
         window_end = window_start + window_ms
 
         # 取出该窗口内数据
         pts = [x for x in self._buf[p.asset_id] if window_start <= x.ts_ms < window_end]
-        if len(pts) < 10:
+        if len(pts) < 20:
             return None
 
         df = pd.DataFrame([{ "ts_ms": x.ts_ms, "asset_id": x.asset_id, "point": x.point, "value": x.value } for x in pts])

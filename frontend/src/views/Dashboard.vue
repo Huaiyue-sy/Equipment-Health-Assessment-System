@@ -104,7 +104,7 @@
     </div>
 
     <!-- 趋势图表区 -->
-    <div class="trends-section" v-if="prediction">
+    <div class="trends-section">
       <div class="trend-card">
         <h3 class="card-head">健康分数趋势</h3>
         <div ref="scoreChartRef" class="chart-box"></div>
@@ -302,7 +302,7 @@ function switchDevice(id) {
   assetId.value = id
   nextTick(() => {
     loadTrends(id)
-    renderCharts()
+    scheduleRender()
   })
 }
 
@@ -311,11 +311,23 @@ const alarmsCollapsed = ref(false)
 async function startReplay() {
   if (replaying.value) return
   replaying.value = true
+  // Cancel pending chart render
+  if (_renderTimer) { clearTimeout(_renderTimer); _renderTimer = null }
+  // Clear chart data instead of disposing instances
+  if (scoreChart) {
+    scoreChart.setOption(buildScoreChartOption([]), true)
+  }
+  if (telemetryChart) {
+    telemetryChart.setOption(buildTelemetryChartOption({}, []), true)
+  }
   deviceList.value.forEach((d) => {
     deviceLastLevel[d] = null
     deviceEvents[d] = []
     deviceLatest[d] = {}
     devicePredictions[d] = null
+    deviceHealthHistory[d] = []
+    deviceAlarms[d] = []
+    deviceAlarmHistory[d] = []
   })
   try {
     await apiSimulateStart()
@@ -323,7 +335,7 @@ async function startReplay() {
   } catch (e) {
     replaying.value = false
   }
-  setTimeout(() => { replaying.value = false }, 600_000)
+  setTimeout(() => { replaying.value = false }, 35_000)
 }
 
 function deviceLevelText(id) {
@@ -494,19 +506,28 @@ function renderCharts() {
   const aId = assetId.value
   const healthHistory = deviceHealthHistory[aId] || []
 
-  if (scoreChartRef.value && healthHistory.length > 1) {
+  if (scoreChartRef.value && healthHistory.length > 0) {
     if (!scoreChart) {
       scoreChart = echarts.init(scoreChartRef.value)
     }
     scoreChart.setOption(buildScoreChartOption(healthHistory), true)
   }
 
-  if (telemetryChartRef.value && healthHistory.length > 1) {
+  if (telemetryChartRef.value && healthHistory.length > 0) {
     if (!telemetryChart) {
       telemetryChart = echarts.init(telemetryChartRef.value)
     }
     telemetryChart.setOption(buildTelemetryChartOption({}, healthHistory), true)
   }
+}
+
+let _renderTimer = null
+function scheduleRender() {
+  if (_renderTimer) return
+  _renderTimer = setTimeout(() => {
+    _renderTimer = null
+    nextTick(() => renderCharts())
+  }, 200)
 }
 
 function handleResize() {
@@ -683,6 +704,19 @@ const probaItems = computed(() => {
   }))
 })
 
+/* ── watchers ── */
+
+watch(assetId, () => {
+  nextTick(() => renderCharts())
+})
+
+watch(() => deviceHealthHistory[assetId.value]?.length, (newLen, oldLen) => {
+  // Render on first data arrival or significant growth
+  if (newLen && (!oldLen || newLen > oldLen)) {
+    nextTick(() => renderCharts())
+  }
+})
+
 /* ── lifecycle ── */
 
 let stop = null
@@ -775,11 +809,9 @@ onMounted(async () => {
       }
       deviceLastLevel[aId] = newLevel
 
-      // 实时更新图表 (每 3 次预测渲染一次，避免过度刷新)
-      const counter = (deviceHealthHistory[aId]?._renderCounter || 0) + 1
-      if (deviceHealthHistory[aId]) deviceHealthHistory[aId]._renderCounter = counter
-      if (aId === assetId.value && counter % 3 === 0) {
-        nextTick(() => renderCharts())
+      // 实时更新图表（当前设备每 800ms 最多渲染一次）
+      if (aId === assetId.value) {
+        scheduleRender()
       }
     }
 

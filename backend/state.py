@@ -54,13 +54,15 @@ class InMemoryState:
             telemetry = {}
             ring = {}
             health = {}
+            alarms = {}
             for a in assets:
                 telemetry[a] = {k: asdict(v) for k, v in self._latest_by_point.get(a, {}).items()}
                 ring[a] = [asdict(x) for x in list(self._ring.get(a, []))]
                 if a in self._health_latest:
                     health[a] = asdict(self._health_latest[a])
+                alarms[a] = list(self._alarm_history.get(a, []))
 
-            return {
+            result = {
                 "started_at": self._started_at,
                 "mqtt_connected": self._mqtt_connected,
                 "model_loaded": self._model_loaded,
@@ -69,7 +71,12 @@ class InMemoryState:
                 "telemetry_latest": telemetry,
                 "telemetry_ring": ring,
                 "health_latest": health,
+                "alarm_history": alarms,
             }
+            # When requesting a single asset, also include active_alarms at top level for convenience
+            if asset_id and asset_id in alarms:
+                result["active_alarms"] = alarms[asset_id]
+            return result
 
     def health_trend(self, asset_id: str) -> list[dict]:
         with self._lock:
@@ -78,3 +85,23 @@ class InMemoryState:
     def alarm_trend(self, asset_id: str) -> list[dict]:
         with self._lock:
             return list(self._alarm_history.get(asset_id, []))
+
+    def reset(self, asset_id: str | None = None) -> None:
+        """重置状态，支持单个资产或全部资产。"""
+        with self._lock:
+            if asset_id is not None:
+                self._latest_by_point.pop(asset_id, None)
+                self._ring.pop(asset_id, None)
+                self._health_latest.pop(asset_id, None)
+                self._health_history.pop(asset_id, None)
+                self._alarm_history.pop(asset_id, None)
+            else:
+                self._latest_by_point.clear()
+                self._ring.clear()
+                self._health_latest.clear()
+                self._health_history.clear()
+                self._alarm_history.clear()
+                self._mqtt_connected = False
+                self._last_msg_ts = None
+                self._model_loaded = False
+                self._started_at = time.time()

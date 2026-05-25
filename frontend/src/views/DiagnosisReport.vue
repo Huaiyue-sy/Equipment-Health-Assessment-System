@@ -22,7 +22,7 @@
                 :stroke-dasharray="(r.health_score || 0) * 1.57 + ' 157'"
                 :stroke="scoreColor(r.health_score)" />
             </svg>
-            <span class="mini-score-num">{{ r.health_score ?? '--' }}</span>
+            <span class="mini-score-num">{{ r.health_score != null ? r.health_score.toFixed(1) : '--' }}</span>
           </div>
         </div>
 
@@ -130,6 +130,18 @@ const ADVICE_MAP = {
   3: '设备处于危险状态！请立即停机检查，排查电机过载、轴承失效、转子不平衡等故障。',
 }
 
+function parseExplanation(explanation) {
+  if (!explanation) return []
+  // Split by " -> " for decision-tree path or feature-importance chain
+  const parts = explanation.split(' -> ').filter(Boolean)
+  return parts.map((seg) => {
+    // Extract feature name (first token before space/symbol)
+    const feature = seg.split(/[ <=>(\u2191\u2193]/)[0] || ''
+    const abnormal = /偏高|偏低|↑|↓|>/.test(seg)
+    return { feature, description: seg, abnormal }
+  })
+}
+
 onMounted(async () => {
   try {
     // auth check
@@ -154,17 +166,23 @@ onMounted(async () => {
         )
         const data = await res.json()
         if (res.ok) {
-          const pred = data.prediction || {}
-          const adviceLv = pred.health_level != null ? pred.health_level : -1
+          const health = (data.health_latest || {})[assetId] || {}
+          const telemetryRaw = (data.telemetry_latest || {})[assetId] || {}
+          // Convert {point: {value, ...}} → {point_label: value}
+          const telemetry = {}
+          for (const [k, v] of Object.entries(telemetryRaw)) {
+            telemetry[k] = (v && typeof v === 'object') ? v.value : v
+          }
+          const adviceLv = health.health_level != null ? health.health_level : -1
           results.push({
             asset_id: assetId,
-            health_level: pred.health_level ?? null,
-            health_score: pred.health_score ?? null,
-            latest_telemetry: data.latest || {},
-            explain_nodes: pred.explain_nodes || [],
+            health_level: health.health_level ?? null,
+            health_score: health.health_score ?? null,
+            latest_telemetry: telemetry,
+            explain_nodes: parseExplanation(health.explanation || ''),
             active_alarms: (data.active_alarms || []),
             advice: ADVICE_MAP[adviceLv] || '数据不足，无法生成维护建议。请确保设备正在运行且数据正常推送。',
-            updated_at: pred.ts_ms || null,
+            updated_at: health.ts_ms || null,
           })
         }
       } catch {

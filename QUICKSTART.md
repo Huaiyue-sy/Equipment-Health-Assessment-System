@@ -16,6 +16,11 @@ bash start.sh
 ## 分步启动
 
 ```bash
+
+#emqx启动
+cd到emqx/bin目录 
+输入 ./emqx start
+
 # 1. 安装依赖
 pip install -r requirements.txt
 pip install -e .

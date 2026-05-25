@@ -198,9 +198,9 @@ def create_app() -> Flask:
 
     MULTI_DEVICES = [
         # (asset_id, fault_inject_at_s, degradation_per_hour, seconds, sleep_s)
-        ("PUMP-001", 10,  6.0, 600, 1.0),   # 快速
-        ("PUMP-002", 20,  4.5, 600, 1.0),   # 中速
-        ("PUMP-003", 15,  5.0, 600, 1.0),   # 适中
+        ("PUMP-001", 120, 6.0, 600, 0.05),  # 快速恶化，6s 后开始
+        ("PUMP-002", 180, 4.0, 600, 0.05),  # 中速恶化，9s 后开始
+        ("PUMP-003", 150, 5.0, 600, 0.05),  # 适中恶化，7.5s 后开始
     ]
 
     def _start_all_sims():
@@ -213,6 +213,11 @@ def create_app() -> Flask:
             except Exception:
                 pass
         _sim_procs = []
+
+        # 重置 scorer 和 state，避免上一轮的状态影响重演
+        for asset_id, _, _, _, _ in MULTI_DEVICES:
+            scorer_worker.scorer.reset(asset_id)
+            state.reset(asset_id)
 
         python = sys.executable
         for asset_id, fault_s, deg_hr, secs, sleep_s in MULTI_DEVICES:

@@ -27,9 +27,10 @@ class ScorerWorker:
             self.state.set_health(hr)
             self.hub.publish("prediction", asdict(hr))
 
-            # 推送报警事件
+            # 推送报警事件并存储到 state
             alarms = self.scorer.latest_alarms(p.asset_id)
             for alarm in alarms:
+                self.state.add_alarm(alarm)
                 self.hub.publish("alarm", asdict(alarm))
 
 
