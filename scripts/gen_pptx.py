@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate iHealthSim presentation PPTX from architecture documentation."""
+"""Generate iHealthSim presentation PPTX from presentation.html (v0.2.0)."""
 
 from pptx import Presentation
 from pptx.util import Inches, Pt, Emu, Cm
@@ -28,6 +28,12 @@ C_LIGHT_PURPLE= RGBColor(0xED, 0xE9, 0xFE)
 C_BORDER = RGBColor(0xE2, 0xE8, 0xF0)
 C_CODE_BG = RGBColor(0x1E, 0x29, 0x3B)
 C_CODE_FG = RGBColor(0xE2, 0xE8, 0xF0)
+C_PINK = RGBColor(0xEC, 0x48, 0x99)
+C_GREEN2 = RGBColor(0x06, 0x5F, 0x46)
+C_AMBER2 = RGBColor(0x92, 0x40, 0x0E)
+C_RED2 = RGBColor(0x99, 0x1B, 0x1B)
+C_BLUE2 = RGBColor(0x1E, 0x40, 0xAF)
+C_PURPLE2 = RGBColor(0x5B, 0x21, 0xB6)
 
 # ── Slide dimensions (16:9) ──
 W = Inches(13.333)
@@ -64,26 +70,6 @@ def add_text_box(slide, left, top, width, height, text, font_size=14,
         p.font.name = font_name
     return txBox
 
-def add_rich_text(slide, left, top, width, height, segments, align=PP_ALIGN.LEFT):
-    """segments: list of (text, size, color, bold)"""
-    txBox = slide.shapes.add_textbox(Inches(left), Inches(top), Inches(width), Inches(height))
-    tf = txBox.text_frame
-    tf.word_wrap = True
-    p = tf.paragraphs[0]
-    p.alignment = align
-    for i, seg in enumerate(segments):
-        text, size, color, bold = seg
-        if i == 0:
-            run = p.runs[0] if p.runs else p.add_run()
-            run.text = text
-        else:
-            run = p.add_run()
-            run.text = text
-        run.font.size = Pt(size)
-        run.font.color.rgb = color
-        run.font.bold = bold
-    return txBox
-
 def add_rect(slide, left, top, width, height, fill_color, border_color=None, border_width=Pt(1)):
     shape = slide.shapes.add_shape(
         MSO_SHAPE.ROUNDED_RECTANGLE,
@@ -109,7 +95,6 @@ def add_rect_text(slide, left, top, width, height, text, fill_color=C_WHITE,
     p.font.size = Pt(font_size)
     p.font.color.rgb = font_color
     p.font.bold = bold
-    # vertical center
     tf.paragraphs[0].space_before = Pt(0)
     tf.paragraphs[0].space_after = Pt(0)
     shape.text_frame.auto_size = None
@@ -126,7 +111,6 @@ def add_card(slide, left, top, width, height, title, body_lines,
     tf.margin_top = Inches(0.15)
     tf.margin_bottom = Inches(0.1)
 
-    # Title
     p = tf.paragraphs[0]
     p.text = title
     p.font.size = Pt(title_size)
@@ -134,7 +118,6 @@ def add_card(slide, left, top, width, height, title, body_lines,
     p.font.bold = True
     p.space_after = Pt(6)
 
-    # Body
     for line in body_lines:
         p = tf.add_paragraph()
         p.text = line
@@ -190,17 +173,36 @@ def add_table(slide, left, top, col_widths, headers, rows):
                 p.font.color.rgb = C_BODY
     return table_shape
 
+def add_slide_num(slide, num, total=19):
+    add_text_box(slide, 11.5, 7.1, 1.5, 0.3, f"{num} / {total}", font_size=10, color=C_MUTED, align=PP_ALIGN.RIGHT)
+
+def add_section_slide(title, desc, slide_num):
+    s = add_blank_slide()
+    fill_bg(s, C_DARK)
+    add_text_box(s, 1, 2.6, 11.3, 1.2, title, font_size=42,
+                 color=C_WHITE, bold=True, align=PP_ALIGN.CENTER)
+    add_text_box(s, 1, 3.9, 11.3, 0.8, desc, font_size=18, color=C_MUTED, align=PP_ALIGN.CENTER)
+    add_slide_num(s, slide_num)
+    return s
+
+def add_content_title(slide, title, subtitle):
+    add_text_box(slide, 0.8, 0.4, 11, 0.6, title, font_size=28, color=C_DARK, bold=True)
+    add_text_box(slide, 0.8, 0.9, 11, 0.3, subtitle, font_size=12, color=C_MUTED)
+
+def add_insight_box(slide, left, top, width, height, text):
+    add_rect(slide, left, top, width, height, RGBColor(0xFF, 0xFB, 0xEB), RGBColor(0xFD, 0xE6, 0x8A), Pt(1))
+    add_rect(slide, left, top, 0.06, height, C_AMBER, None)
+    add_text_box(slide, left + 0.2, top + 0.05, width - 0.35, height - 0.1, text,
+                 font_size=11, color=C_AMBER2)
+
 
 # ═══════════════════════════════════════════
 #  SLIDE 1: COVER
 # ═══════════════════════════════════════════
 s = add_blank_slide()
 fill_bg(s, C_DARK)
-
-# Gradient-like accent bar
 add_rect(s, 0, 0, W.inches, 0.08, C_BRAND, None)
 
-# Icon circle
 icon_shape = s.shapes.add_shape(MSO_SHAPE.OVAL, Inches(6.1), Inches(1.6), Inches(1.2), Inches(1.2))
 icon_shape.fill.solid()
 icon_shape.fill.fore_color.rgb = C_BRAND
@@ -218,24 +220,15 @@ add_text_box(s, 0.5, 3.1, 12.3, 1.2, "iHealthSim", font_size=48,
 add_text_box(s, 0.5, 4.3, 12.3, 0.8,
              "工业设备健康状态评估系统\n全仿真 · 完整链路 · 实时看板",
              font_size=20, color=C_MUTED, align=PP_ALIGN.CENTER)
-add_text_box(s, 0.5, 5.8, 12.3, 0.5, "版本 0.1.0  ·  2025-05",
+add_text_box(s, 0.5, 5.8, 12.3, 0.5, "版本 0.2.0  ·  2026-05",
              font_size=13, color=C_MUTED, align=PP_ALIGN.CENTER)
-
-# ── Slide number indicator ──
-add_text_box(s, 11.5, 7.1, 1.5, 0.3, "1 / 17", font_size=10, color=C_MUTED, align=PP_ALIGN.RIGHT)
+add_slide_num(s, 1)
 
 
 # ═══════════════════════════════════════════
 #  SLIDE 2: SECTION - Project Overview
 # ═══════════════════════════════════════════
-s = add_blank_slide()
-fill_bg(s, C_DARK)
-add_text_box(s, 1, 2.6, 11.3, 1.2, "项目概述", font_size=42,
-             color=C_WHITE, bold=True, align=PP_ALIGN.CENTER)
-add_text_box(s, 1, 3.9, 11.3, 0.8,
-             "基于仿真设备 + MQTT + 决策树 + Vue 前端的\n工业设备健康评估原型系统",
-             font_size=18, color=C_MUTED, align=PP_ALIGN.CENTER)
-add_text_box(s, 11.5, 7.1, 1.5, 0.3, "2 / 17", font_size=10, color=C_MUTED, align=PP_ALIGN.RIGHT)
+add_section_slide("项目概述", "多模型 + 报警引擎 + ECharts 趋势 + 完整数据链路", 2)
 
 
 # ═══════════════════════════════════════════
@@ -243,19 +236,15 @@ add_text_box(s, 11.5, 7.1, 1.5, 0.3, "2 / 17", font_size=10, color=C_MUTED, alig
 # ═══════════════════════════════════════════
 s = add_blank_slide()
 fill_bg(s, C_BG)
-add_text_box(s, 0.8, 0.4, 11, 0.6, "项目定位与核心价值", font_size=28,
-             color=C_DARK, bold=True)
-add_text_box(s, 0.8, 0.9, 11, 0.4, "面向 IIoT / PdM / EHM 的完整技术链路验证原型",
-             font_size=13, color=C_MUTED)
+add_content_title(s, "项目定位与核心价值", "面向 IIoT / PdM / EHM 的完整技术链路验证原型")
 
-# 4 cards
 add_card(s, 0.8, 1.5, 5.8, 2.2,
          "零硬件依赖",
          ["所有设备数据由物理仿真引擎生成",
           "覆盖 6 种工况循环、渐进退化",
           "故障注入、瞬态尖峰等真实场景",
           "无需连接真实 PLC/传感器"],
-         icon_color=C_BRAND, title_size=15, body_size=11)
+         title_size=15, body_size=11)
 
 add_card(s, 7.0, 1.5, 5.8, 2.2,
          "完整数据链路",
@@ -263,7 +252,7 @@ add_card(s, 7.0, 1.5, 5.8, 2.2,
           "→ 特征工程 → 决策树训练",
           "→ 在线打分 → SSE 推送",
           "→ Web 实时看板展示"],
-         icon_color=C_GREEN, title_size=15, body_size=11)
+         title_size=15, body_size=11)
 
 add_card(s, 0.8, 4.0, 5.8, 2.2,
          "可审计预测",
@@ -271,35 +260,29 @@ add_card(s, 0.8, 4.0, 5.8, 2.2,
           "从根节点到叶节点逐步解释",
           "前端渲染为诊断依据时间线",
           "非黑盒模型，安全可信"],
-         icon_color=C_AMBER, title_size=15, body_size=11)
+         title_size=15, body_size=11)
 
 add_card(s, 7.0, 4.0, 5.8, 2.2,
          "工业级可扩展",
          ["标准 MQTT 消息格式",
           "无缝替换为真实设备数据源",
           "Pipeline 架构支持 sklearn",
-          "模型热替换，即插即用"],
-         icon_color=C_PURPLE, title_size=15, body_size=11)
+          "模型热替换 (Tree/XGB/LGB)"],
+         title_size=15, body_size=11)
 
-# Bottom tag
+# Tags
 add_rect_text(s, 0.8, 6.5, 2.6, 0.35, "IIoT 原型验证", C_LIGHT_BLUE, RGBColor(0x93,0xC5,0xFD), 10, C_BRAND, True)
-add_rect_text(s, 3.6, 6.5, 2.6, 0.35, "预测性维护 PdM", C_LIGHT_GREEN, RGBColor(0x6E,0xE7,0xB7), 10, RGBColor(0x06,0x5F,0x46), True)
-add_rect_text(s, 6.4, 6.5, 2.6, 0.35, "设备健康管理 EHM", C_LIGHT_AMBER, RGBColor(0xFC,0xD3,0x4D), 10, RGBColor(0x92,0x40,0x0E), True)
+add_rect_text(s, 3.6, 6.5, 2.6, 0.35, "预测性维护 PdM", C_LIGHT_GREEN, RGBColor(0x6E,0xE7,0xB7), 10, C_GREEN2, True)
+add_rect_text(s, 6.4, 6.5, 2.6, 0.35, "设备健康管理 EHM", C_LIGHT_AMBER, RGBColor(0xFC,0xD3,0x4D), 10, C_AMBER2, True)
+add_rect_text(s, 9.2, 6.5, 2.6, 0.35, "工业大数据/ML教学", C_LIGHT_PURPLE, RGBColor(0xC4,0xB5,0xFD), 10, C_PURPLE2, True)
 
-add_text_box(s, 11.5, 7.1, 1.5, 0.3, "3 / 17", font_size=10, color=C_MUTED, align=PP_ALIGN.RIGHT)
+add_slide_num(s, 3)
 
 
 # ═══════════════════════════════════════════
 #  SLIDE 4: SECTION - Architecture
 # ═══════════════════════════════════════════
-s = add_blank_slide()
-fill_bg(s, C_DARK)
-add_text_box(s, 1, 2.6, 11.3, 1.2, "系统架构", font_size=42,
-             color=C_WHITE, bold=True, align=PP_ALIGN.CENTER)
-add_text_box(s, 1, 3.9, 11.3, 0.8,
-             "三层架构：仿真设备层 → MQTT 传输层 → 计算 + 展示层",
-             font_size=18, color=C_MUTED, align=PP_ALIGN.CENTER)
-add_text_box(s, 11.5, 7.1, 1.5, 0.3, "4 / 17", font_size=10, color=C_MUTED, align=PP_ALIGN.RIGHT)
+add_section_slide("系统架构", "三层架构：仿真设备层 → MQTT 传输层 → 计算 + 展示层", 4)
 
 
 # ═══════════════════════════════════════════
@@ -307,13 +290,11 @@ add_text_box(s, 11.5, 7.1, 1.5, 0.3, "4 / 17", font_size=10, color=C_MUTED, alig
 # ═══════════════════════════════════════════
 s = add_blank_slide()
 fill_bg(s, C_BG)
-add_text_box(s, 0.8, 0.4, 11, 0.6, "系统架构全景图", font_size=28, color=C_DARK, bold=True)
-add_text_box(s, 0.8, 0.9, 11, 0.3, "三层解耦：设备仿真 → MQTT 消息中间件 → 后端计算 + 前端展示", font_size=12, color=C_MUTED)
+add_content_title(s, "系统架构全景图", "三层解耦：设备仿真 → MQTT 消息中间件 → 后端计算 + 前端展示")
 
 # Frontend
 add_rect_text(s, 4.0, 1.3, 5.3, 0.55, "Vue 3 前端 :5173   Login / Dashboard / Admin",
               C_LIGHT_PURPLE, RGBColor(0xC4,0xB5,0xFD), 13, C_PURPLE, True)
-# Arrow down
 add_text_box(s, 6.4, 1.85, 0.5, 0.35, "▼", font_size=16, color=C_MUTED, align=PP_ALIGN.CENTER)
 
 # Backend group
@@ -335,7 +316,7 @@ add_text_box(s, 2.5, 3.4, 2, 0.3, "subscribe", font_size=9, color=C_MUTED, align
 
 # EMQX
 add_rect_text(s, 3.5, 3.65, 6.3, 0.6, "EMQX Broker :1883   topic: telemetry/raw/#",
-              C_LIGHT_GREEN, RGBColor(0x6E,0xE7,0xB7), 13, RGBColor(0x06,0x5F,0x46), True)
+              C_LIGHT_GREEN, RGBColor(0x6E,0xE7,0xB7), 13, C_GREEN2, True)
 
 # Arrow
 add_text_box(s, 6.4, 4.25, 0.5, 0.3, "▼", font_size=14, color=C_MUTED, align=PP_ALIGN.CENTER)
@@ -346,13 +327,10 @@ add_rect_text(s, 4.0, 4.5, 5.3, 0.6, "仿真设备 × 3    PUMP-001  ~  PUMP-003
               C_LIGHT_BLUE, RGBColor(0x93,0xC5,0xFD), 13, C_BRAND, True)
 
 # Insight box
-add_rect(s, 0.8, 5.5, 11.7, 1.2, RGBColor(0xFF, 0xFB, 0xEB), RGBColor(0xFD, 0xE6, 0x8A), Pt(1))
-tf = add_rect(s, 0.8, 5.5, 0.08, 1.2, C_AMBER, None).text_frame  # left accent bar
-tx = add_text_box(s, 1.1, 5.55, 11.2, 1.1,
-                  "架构原则\n设备不感知消费者，后端不感知发布者。通过 EMQX 解耦，单台设备可被 N 个后端同时消费；"
-                  "替换真实设备时只需发布相同格式的 JSON 到相同 topic。",
-                  font_size=11, color=RGBColor(0x92,0x40,0x0E))
-add_text_box(s, 11.5, 7.1, 1.5, 0.3, "5 / 17", font_size=10, color=C_MUTED, align=PP_ALIGN.RIGHT)
+add_insight_box(s, 0.8, 5.5, 11.7, 1.2,
+                "架构原则\n设备不感知消费者，后端不感知发布者。通过 EMQX 解耦，单台设备可被 N 个后端同时消费；"
+                "替换真实设备时只需发布相同格式的 JSON 到相同 topic。")
+add_slide_num(s, 5)
 
 
 # ═══════════════════════════════════════════
@@ -360,10 +338,8 @@ add_text_box(s, 11.5, 7.1, 1.5, 0.3, "5 / 17", font_size=10, color=C_MUTED, alig
 # ═══════════════════════════════════════════
 s = add_blank_slide()
 fill_bg(s, C_BG)
-add_text_box(s, 0.8, 0.4, 11, 0.6, "数据流详解", font_size=28, color=C_DARK, bold=True)
-add_text_box(s, 0.8, 0.9, 11, 0.3, "从仿真器 step() 一个方法调用到前端看板实时刷新", font_size=12, color=C_MUTED)
+add_content_title(s, "数据流详解", "从仿真器 step() 一个方法调用到前端看板实时刷新")
 
-# Left: flow steps
 steps = [
     "1   DeviceSimulator.step() 更新健康度、计算 6 个遥测点位",
     "2   封装 TelemetryPoint → JSON → MQTT publish",
@@ -378,15 +354,14 @@ for step in steps:
     add_text_box(s, 0.8, y, 6, 0.35, step, font_size=12, color=C_BODY)
     y += 0.52
 
-# Right: key points
 add_card(s, 7.3, 1.5, 5.3, 2.0, "关键技术点", [
-    "• 以 temp_c 点位作为窗口触发器，每窗口只打分一次",
-    "• 去抖逻辑：恶化连续 3 次确认，恢复连续 5 次确认",
-    "• SSE 基于 HTTP，浏览器原生支持断线重连",
-    "• Thread-safe：ScorerWorker 使用锁保护模型推理",
+    "• 以 temp_c 点位作为窗口触发器",
+    "• 去抖逻辑：恶化 3 次确认，恢复 5 次确认",
+    "• SSE 基于 HTTP，浏览器原生断线重连",
+    "• Thread-safe：ScorerWorker 锁保护模型推理",
+    "• 窗口级打分，每窗口只触发一次推理",
 ], title_size=14, body_size=11)
 
-# Right bottom: code block
 add_code_block(s, 7.3, 3.8, 5.3, 2.2,
     '# MQTT 消息格式（JSON）\n'
     '{\n'
@@ -396,20 +371,13 @@ add_code_block(s, 7.3, 3.8, 5.3, 2.2,
     '  "value": 55.2,\n'
     '  "quality": "good"\n'
     '}')
-add_text_box(s, 11.5, 7.1, 1.5, 0.3, "6 / 17", font_size=10, color=C_MUTED, align=PP_ALIGN.RIGHT)
+add_slide_num(s, 6)
 
 
 # ═══════════════════════════════════════════
 #  SLIDE 7: SECTION - Core Modules
 # ═══════════════════════════════════════════
-s = add_blank_slide()
-fill_bg(s, C_DARK)
-add_text_box(s, 1, 2.6, 11.3, 1.2, "核心模块详解", font_size=42,
-             color=C_WHITE, bold=True, align=PP_ALIGN.CENTER)
-add_text_box(s, 1, 3.9, 11.3, 0.8,
-             "仿真引擎 · 特征工程 · 决策树 · 在线打分 · 去抖迟滞",
-             font_size=18, color=C_MUTED, align=PP_ALIGN.CENTER)
-add_text_box(s, 11.5, 7.1, 1.5, 0.3, "7 / 17", font_size=10, color=C_MUTED, align=PP_ALIGN.RIGHT)
+add_section_slide("核心模块详解", "仿真引擎 · 特征工程 · 决策树 · 在线打分 · 去抖迟滞", 7)
 
 
 # ═══════════════════════════════════════════
@@ -417,11 +385,9 @@ add_text_box(s, 11.5, 7.1, 1.5, 0.3, "7 / 17", font_size=10, color=C_MUTED, alig
 # ═══════════════════════════════════════════
 s = add_blank_slide()
 fill_bg(s, C_BG)
-add_text_box(s, 0.8, 0.4, 11, 0.6, "设备仿真器 + 特征工程", font_size=28, color=C_DARK, bold=True)
-add_text_box(s, 0.8, 0.9, 11, 0.3, "物理驱动的渐进退化仿真模型", font_size=12, color=C_MUTED)
+add_content_title(s, "设备仿真器 + 特征工程", "物理驱动的渐进退化仿真模型")
 
-# Simulation model
-add_card(s, 0.8, 1.4, 5.8, 2.3, "仿真模型 (DeviceSimulator)", [
+add_card(s, 0.8, 1.4, 5.8, 2.6, "仿真模型 (DeviceSimulator)", [
     "• latent_health [0→1] 潜在健康度变量",
     "• 基础退化: degradation/hr + 高斯噪声",
     "• 故障注入: 3× 加速退化",
@@ -432,21 +398,19 @@ add_card(s, 0.8, 1.4, 5.8, 2.3, "仿真模型 (DeviceSimulator)", [
     "• 瞬态尖峰 0.05%/s 概率",
 ], title_size=14, body_size=10)
 
-# Feature engineering
-add_card(s, 7.0, 1.4, 5.8, 2.3, "特征工程流水线", [
-    "① long → wide pivot",
+add_card(s, 7.0, 1.4, 5.8, 2.6, "特征工程流水线", [
+    "① long → wide pivot 透视为宽表",
     "② 60s 滑动窗口划分",
     "③ 基础统计: mean/std/min/max/p95",
     "④ 趋势特征: 线性回归斜率",
     "⑤ Δ 特征: 与上一窗口差值",
     "⑥ 工况归一化振动: vib/(rpm/1000)",
     "⑦ 标签: 窗口内最大 health_level",
-    "输出: data/features.csv (~30 列特征 + y)",
+    "→ 输出: data/features.csv (~30 列特征)",
 ], title_size=14, body_size=10)
 
-# Telemetry points table
-add_text_box(s, 0.8, 3.9, 5, 0.3, "遥测点位", font_size=14, color=C_DARK, bold=True)
-add_table(s, 0.8, 4.2, [2.0, 2.0, 1.8, 1.8],
+add_text_box(s, 0.8, 4.2, 5, 0.3, "遥测点位", font_size=14, color=C_DARK, bold=True)
+add_table(s, 0.8, 4.5, [2.0, 2.0, 1.8, 1.8],
           ["点位", "含义", "正常范围", "恶化趋势"],
           [["rpm", "转速", "1500-2900", "基准恒定"],
            ["load", "负载比", "0.1-1.0", "基准恒定"],
@@ -455,16 +419,7 @@ add_table(s, 0.8, 4.2, [2.0, 2.0, 1.8, 1.8],
            ["motor_current_a", "电机电流 (A)", "~10-40", "↑ 上升"],
            ["label_health_level", "健康标签", "0-3", "训练用"]])
 
-# Health levels
-add_text_box(s, 7.0, 3.9, 5, 0.3, "健康等级定义", font_size=14, color=C_DARK, bold=True)
-add_table(s, 7.0, 4.2, [1.4, 1.8, 1.8],
-          ["等级", "latent_health", "状态"],
-          [["Lv0 健康", "≥ 0.80", "🟢 正常运转"],
-           ["Lv1 注意", "0.60~0.80", "🟡 关注趋势"],
-           ["Lv2 警告", "0.40~0.60", "🔴 明显异常"],
-           ["Lv3 危险", "< 0.40", "🟣 停机检查"]])
-
-add_text_box(s, 11.5, 7.1, 1.5, 0.3, "8 / 17", font_size=10, color=C_MUTED, align=PP_ALIGN.RIGHT)
+add_slide_num(s, 8)
 
 
 # ═══════════════════════════════════════════
@@ -472,77 +427,187 @@ add_text_box(s, 11.5, 7.1, 1.5, 0.3, "8 / 17", font_size=10, color=C_MUTED, alig
 # ═══════════════════════════════════════════
 s = add_blank_slide()
 fill_bg(s, C_BG)
-add_text_box(s, 0.8, 0.4, 11, 0.6, "模型训练 + 在线打分", font_size=28, color=C_DARK, bold=True)
-add_text_box(s, 0.8, 0.9, 11, 0.3, "scikit-learn Pipeline + 去抖迟滞逻辑", font_size=12, color=C_MUTED)
+add_content_title(s, "模型训练 + 在线打分", "scikit-learn Pipeline + 去抖迟滞逻辑 · 多模型可选")
 
-# Left: Training
-add_card(s, 0.8, 1.4, 5.8, 1.5, "训练 Pipeline", [
+# Left column
+add_card(s, 0.8, 1.4, 5.8, 2.0, "训练 Pipeline（3 种模型可选）", [
     "ColumnTransformer(SimpleImputer(median))",
     "        ↓",
-    "DecisionTreeClassifier(max_depth=5, min_leaf=50, balanced)",
+    "--model tree → DecisionTreeClassifier(max_depth=5, balanced)",
+    "--model xgb  → XGBClassifier",
+    "--model lgb  → LGBMClassifier",
     "时间序列分割: 按窗口时间顺序切分，避免数据泄露",
-    "feature_set=online: 只用 OnlineScorer 可实时计算的特征",
-], title_size=14, body_size=11)
+    "feature_stats: 训练后按健康等级计算均值/std 存入模型",
+], title_size=14, body_size=10)
 
-# 8 online features
-add_card(s, 0.8, 3.1, 5.8, 1.2, "8 个在线特征", [
+add_card(s, 0.8, 3.6, 5.8, 1.3, "8 个在线特征 (feature_set=online)", [
     "rpm_mean  |  load_mean  |  vib_rms_mean  |  temp_c_mean",
     "motor_current_a_mean  |  vib_rms_std  |  temp_c_std",
     "vib_rms_norm (= vib_rms / (rpm/1000))",
-], title_size=14, body_size=11)
+], title_size=14, body_size=10)
 
-# Online scorer flow
+# Right column
 add_card(s, 7.0, 1.4, 5.8, 2.0, "OnlineScorer 工作流程", [
     "① 按 asset_id 缓冲遥测点队列",
     "② temp_c 触发 60s 窗口边界判定",
     "③ 提取窗口数据 → 计算 8 个实时特征",
     "④ pipeline.predict() + predict_proba()",
     "⑤ 去抖确认 → HealthResult",
-    "⑥ 遍历决策树生成可读解释路径",
-], title_size=14, body_size=11)
+    "⑥ Tree: 遍历决策路径 / XGB/LGB: z-score 偏差诊断",
+], title_size=14, body_size=10)
 
 # Debounce config
 add_rect(s, 7.0, 3.6, 5.8, 2.5, C_LIGHT_AMBER, RGBColor(0xFD, 0xE6, 0x8A), Pt(1.5))
-add_text_box(s, 7.2, 3.65, 5.4, 0.3, "去抖配置 (DebounceConfig)", font_size=13, color=RGBColor(0x92,0x40,0x0E), bold=True)
+add_text_box(s, 7.2, 3.65, 5.4, 0.3, "去抖配置 (DebounceConfig)", font_size=13, color=C_AMBER2, bold=True)
 add_table(s, 7.2, 4.0, [1.5, 0.8, 3.0],
           ["参数", "值", "含义"],
           [["raise_n", "3", "连续 3 次确认等级上升（快速报警）"],
            ["recover_n", "5", "连续 5 次确认等级恢复（谨慎解除）"],
            ["abnormal_level", "2", "等级 ≥2 被视为异常"]])
 
-add_rect(s, 7.2, 5.2, 5.4, 0.7, RGBColor(0xFF, 0xFB, 0xEB), None)
-add_text_box(s, 7.4, 5.3, 5.0, 0.5, "工业语义：报警需快速响应，解除需谨慎验证 —— 宁可多等，不误解除",
-             font_size=11, color=RGBColor(0x92,0x40,0x0E))
+add_rect(s, 7.2, 5.25, 5.4, 0.65, RGBColor(0xFF, 0xFB, 0xEB), None)
+add_text_box(s, 7.4, 5.3, 5.0, 0.55,
+             "工业语义：报警需快速响应，解除需谨慎验证\n宁可多等，不误解除",
+             font_size=11, color=C_AMBER2)
 
-add_text_box(s, 11.5, 7.1, 1.5, 0.3, "9 / 17", font_size=10, color=C_MUTED, align=PP_ALIGN.RIGHT)
-
-
-# ═══════════════════════════════════════════
-#  SLIDE 10: SECTION - Backend + Frontend
-# ═══════════════════════════════════════════
-s = add_blank_slide()
-fill_bg(s, C_DARK)
-add_text_box(s, 1, 2.6, 11.3, 1.2, "后端与前端的协作", font_size=42,
-             color=C_WHITE, bold=True, align=PP_ALIGN.CENTER)
-add_text_box(s, 1, 3.9, 11.3, 0.8,
-             "Flask + SSE + Vue 3 实时看板",
-             font_size=18, color=C_MUTED, align=PP_ALIGN.CENTER)
-add_text_box(s, 11.5, 7.1, 1.5, 0.3, "10 / 17", font_size=10, color=C_MUTED, align=PP_ALIGN.RIGHT)
+add_slide_num(s, 9)
 
 
 # ═══════════════════════════════════════════
-#  SLIDE 11: Backend + Frontend Detail
+#  SLIDE 10: Multi-Model Explanation (NEW)
 # ═══════════════════════════════════════════
 s = add_blank_slide()
 fill_bg(s, C_BG)
-add_text_box(s, 0.8, 0.4, 11, 0.6, "后端模块 + 前端看板", font_size=28, color=C_DARK, bold=True)
-add_text_box(s, 0.8, 0.9, 11, 0.3, "7 个后端模块 · 4 个前端页面 · 实时事件驱动", font_size=12, color=C_MUTED)
+add_content_title(s, "多模型解释对比", "同一预测结果，三种模型提供不同深度的诊断依据")
+
+# Decision Tree card
+add_rect(s, 0.8, 1.4, 5.8, 2.2, C_WHITE, C_BORDER)
+add_rect(s, 0.8, 1.4, 5.8, 0.05, C_GREEN, None)
+add_text_box(s, 1.0, 1.5, 5.4, 0.3, "决策树 — 完整决策路径", font_size=14, color=C_GREEN2, bold=True)
+add_code_block(s, 1.0, 1.9, 5.4, 1.3,
+    'vib_rms_mean > 2.351 (val=3.142) →\n'
+    'temp_c_mean <= 55.200 (val=52.100) →\n'
+    'vib_rms_norm > 1.890 (val=2.410) →\n'
+    '→ Lv2 (警告)')
+add_text_box(s, 1.0, 3.35, 5.4, 0.3, "每步可审计，从根节点到叶节点逐步判定", font_size=11, color=C_MUTED)
+
+# XGBoost/LightGBM card
+add_rect(s, 7.0, 1.4, 5.8, 2.2, C_WHITE, C_BORDER)
+add_rect(s, 7.0, 1.4, 5.8, 0.05, C_BRAND, None)
+add_text_box(s, 7.2, 1.5, 5.4, 0.3, "XGBoost/LightGBM — 基线偏差诊断", font_size=14, color=C_BLUE2, bold=True)
+add_code_block(s, 7.2, 1.9, 5.4, 1.3,
+    'vib_rms_mean>偏高↑(val=4.52, z=+3.1, imp=0.28) →\n'
+    'temp_c_mean>略高(val=72.3, z=+1.5, imp=0.19) →\n'
+    '→ Lv2 (警告)')
+add_text_box(s, 7.2, 3.35, 5.4, 0.3, "与 Lv0 健康基线对比，z-score 判定偏离程度", font_size=11, color=C_MUTED)
+
+# z-score criteria
+add_text_box(s, 0.8, 3.9, 5, 0.3, "z-score 偏离判定标准", font_size=14, color=C_DARK, bold=True)
+for i, (label, z_range, color, bg) in enumerate([
+    ("正常", "|z| ≤ 1.0", C_GREEN2, C_LIGHT_GREEN),
+    ("略高/略低", "1.0 < |z| ≤ 2.0", C_AMBER2, C_LIGHT_AMBER),
+    ("偏高↑/偏低↓", "|z| > 2.0", C_RED2, C_LIGHT_RED),
+    ("训练时自动计算", "Lv0~3 均值/std 存入模型", C_MUTED, RGBColor(0xF1, 0xF5, 0xF9)),
+]):
+    cx = 0.8 + i * 3.1
+    shape = add_rect(s, cx, 4.3, 2.8, 1.3, bg, C_BORDER)
+    tf = shape.text_frame
+    tf.word_wrap = True
+    p = tf.paragraphs[0]
+    p.text = z_range
+    p.font.size = Pt(15)
+    p.font.color.rgb = color
+    p.font.bold = True
+    p.alignment = PP_ALIGN.CENTER
+    p2 = tf.add_paragraph()
+    p2.text = label
+    p2.font.size = Pt(11)
+    p2.font.color.rgb = color
+    p2.alignment = PP_ALIGN.CENTER
+
+# Insight
+add_insight_box(s, 0.8, 5.9, 11.7, 0.8,
+                "模型无关的通用诊断接口\n不同模型类型通过统一 API 输出解释结果，前端 DiagnosticsTimeline 组件自适应渲染不同格式。")
+
+add_slide_num(s, 10)
+
+
+# ═══════════════════════════════════════════
+#  SLIDE 11: Alarm Rule Engine (NEW)
+# ═══════════════════════════════════════════
+s = add_blank_slide()
+fill_bg(s, C_BG)
+add_content_title(s, "报警规则引擎", "阈值 + 趋势 + 组合 — 11 条默认规则，基于 ISO 10816 振动标准")
+
+# ── 3 compact columns ──
+
+# Col 1: Threshold rules
+add_rect(s, 0.8, 1.4, 3.7, 3.0, C_WHITE, C_BORDER)
+add_rect(s, 0.8, 1.4, 3.7, 0.05, C_AMBER, None)
+add_text_box(s, 1.0, 1.5, 3.3, 0.3, "阈值规则 (7 条)", font_size=13, color=C_AMBER2, bold=True)
+add_text_box(s, 1.0, 1.78, 3.3, 0.2, "vib_rms · temp_c · motor_current · rpm", font_size=9, color=C_MUTED)
+add_table(s, 1.0, 2.05, [1.1, 1.2, 0.9],
+          ["点位", "条件", "级别"],
+          [["vib_rms", "> 4.5 mm/s", "warning"],
+           ["vib_rms", "> 7.1 mm/s", "critical"],
+           ["temp_c", "> 85°C", "warning"],
+           ["temp_c", "> 105°C", "critical"],
+           ["motor_current", "> 12 A", "warning"],
+           ["motor_current", "> 15 A", "critical"],
+           ["rpm", "< 1000", "warning"]])
+
+# Col 2: Trend rules
+add_rect(s, 4.7, 1.4, 3.7, 3.0, C_WHITE, C_BORDER)
+add_rect(s, 4.7, 1.4, 3.7, 0.05, C_BRAND, None)
+add_text_box(s, 4.9, 1.5, 3.3, 0.3, "趋势规则 (2 条)", font_size=13, color=C_BLUE2, bold=True)
+add_text_box(s, 4.9, 1.78, 3.3, 0.2, "5 窗口滑动判定 · 每个 asset 独立缓冲", font_size=9, color=C_MUTED)
+add_rect(s, 4.9, 2.15, 3.3, 0.85, C_BG, C_BORDER)
+add_text_box(s, 5.1, 2.2, 2.9, 0.75,
+             "振动持续上升\n5 窗口内 vib_rms 上升 >10%", font_size=11, color=C_BODY)
+add_rect(s, 4.9, 3.15, 3.3, 0.85, C_BG, C_BORDER)
+add_text_box(s, 5.1, 3.2, 2.9, 0.75,
+             "温度持续上升\n5 窗口内 temp_c 上升 >5%", font_size=11, color=C_BODY)
+
+# Col 3: Combo rules
+add_rect(s, 8.6, 1.4, 3.9, 3.0, C_WHITE, C_BORDER)
+add_rect(s, 8.6, 1.4, 3.9, 0.05, C_RED, None)
+add_text_box(s, 8.8, 1.5, 3.5, 0.3, "组合规则 (2 条)", font_size=13, color=C_RED2, bold=True)
+add_text_box(s, 8.8, 1.78, 3.5, 0.2, "AND 逻辑 · 多条件同时满足", font_size=9, color=C_MUTED)
+add_rect(s, 8.8, 2.15, 3.5, 0.85, C_LIGHT_RED, C_BORDER)
+add_text_box(s, 9.0, 2.2, 3.1, 0.75,
+             "高温+高振动 → critical\ntemp_c>75 AND vib_rms>3.5", font_size=11, color=C_BODY)
+add_rect(s, 8.8, 3.15, 3.5, 0.85, C_LIGHT_RED, C_BORDER)
+add_text_box(s, 9.0, 3.2, 3.1, 0.75,
+             "高温+大电流 → critical\ntemp_c>80 AND current>10", font_size=11, color=C_BODY)
+
+# Design principle
+add_insight_box(s, 0.8, 4.8, 11.7, 1.6,
+                "设计原则与扩展\n"
+                "• 每条规则独立评估 → 在线打分后立即运行 → 报警通过 SSE (alarm 事件) 实时推送前端 → 60s 后自动清除\n"
+                "• 规则基于 ISO 10816 / ISO 13374 / IEEE 841 等工业标准\n"
+                "• 所有规则通过 AlarmEngine.add_*() 可扩展，不区分模型类型，统一接口")
+
+add_slide_num(s, 11)
+
+
+# ═══════════════════════════════════════════
+#  SLIDE 12: SECTION - Backend + Frontend
+# ═══════════════════════════════════════════
+add_section_slide("后端与前端的协作", "Flask + SSE + Vue 3 + ECharts 实时看板", 12)
+
+
+# ═══════════════════════════════════════════
+#  SLIDE 13: Backend + Frontend Detail
+# ═══════════════════════════════════════════
+s = add_blank_slide()
+fill_bg(s, C_BG)
+add_content_title(s, "后端模块 + 前端看板", "7 个后端模块 · 4 个前端页面 · 实时事件驱动")
 
 # Backend modules
 for i, (title, body) in enumerate([
     ("Flask 主应用 (app.py)", "启动时自动初始化 MQTT 订阅器、状态管理、SSE 中心、打分器；并拉起 3 台仿真设备后台进程"),
     ("认证授权 (auth.py)", "JWT HS256 认证 + 角色管理 (admin/operator) + 设备级 ACL 权限控制，默认 admin/admin123"),
-    ("SSE 事件中心 (sse.py)", "发布-订阅模式，多客户端并发，自动丢弃慢消费者过期消息，3 类事件: telemetry/prediction/flow"),
+    ("SSE 事件中心 (sse.py)", "发布-订阅模式，多客户端并发，自动丢弃慢消费者过期消息，4 类事件: telemetry/prediction/alarm/flow"),
     ("MQTT 订阅器 + State", "paho-mqtt 异步 loop，解析 JSON → TelemetryPoint → State + SSE + Scorer 三路分发"),
 ]):
     cx = 0.8 if i % 2 == 0 else 7.0
@@ -560,111 +625,95 @@ add_table(s, 0.8, 4.5, [1.2, 1.8, 1.2],
 
 # Dashboard features
 add_card(s, 7.0, 4.2, 5.8, 2.5, "Dashboard 核心页面功能", [
-    "• 状态指示条：MQTT / 模型 / 数据状态",
+    "• 状态指示条：MQTT / 模型 / 数据延迟",
     "• 设备标签栏：多设备切换 + 健康等级徽章",
-    "• 健康分数环形图 + 四级概率分布柱状图",
-    "• 诊断依据时间线（决策路径可视化）",
+    "• 健康分数环形图 + 四级概率分布",
+    "• 诊断依据时间线 (多模型格式兼容)",
+    "• ECharts 趋势图：健康分数+等级变化",
+    "• 报警面板：颜色区分严重度, 自动清除",
     "• 实时遥测表 + 事件日志",
-    "• 诊断报告：设备概览/异常指标/维护建议",
     "• 「恶化重演」：一键重启完整退化过程",
 ], title_size=13, body_size=10)
 
-add_text_box(s, 11.5, 7.1, 1.5, 0.3, "11 / 17", font_size=10, color=C_MUTED, align=PP_ALIGN.RIGHT)
+add_slide_num(s, 13)
 
 
 # ═══════════════════════════════════════════
-#  SLIDE 12: SECTION - Design Decisions
+#  SLIDE 14: SECTION - Design Decisions
 # ═══════════════════════════════════════════
-s = add_blank_slide()
-fill_bg(s, C_DARK)
-add_text_box(s, 1, 2.6, 11.3, 1.2, "关键技术决策", font_size=42,
-             color=C_WHITE, bold=True, align=PP_ALIGN.CENTER)
-add_text_box(s, 1, 3.9, 11.3, 0.8,
-             "为什么选择这些技术栈？每个选择背后都有明确的工业场景考量",
-             font_size=18, color=C_MUTED, align=PP_ALIGN.CENTER)
-add_text_box(s, 11.5, 7.1, 1.5, 0.3, "12 / 17", font_size=10, color=C_MUTED, align=PP_ALIGN.RIGHT)
+add_section_slide("关键技术决策", "为什么选择这些技术栈？每个选择背后都有明确的工业场景考量", 14)
 
 
 # ═══════════════════════════════════════════
-#  SLIDE 13: Design Decisions Detail
+#  SLIDE 15: Design Decisions Detail
 # ═══════════════════════════════════════════
 s = add_blank_slide()
 fill_bg(s, C_BG)
-add_text_box(s, 0.8, 0.4, 11, 0.6, "设计决策与理由", font_size=28, color=C_DARK, bold=True)
-add_text_box(s, 0.8, 0.9, 11, 0.3, "每个技术选择背后都有明确的工业场景考量", font_size=12, color=C_MUTED)
+add_content_title(s, "设计决策与理由", "每个技术选择背后都有明确的工业场景考量")
 
 decisions = [
-    (C_BRAND, "为什么用决策树而非深度学习？",
-     "可解释性强：输出完整决策路径，非黑盒；数据量（千-万级窗口）决策树足够；单个 joblib 文件部署，无需 GPU，推理毫秒级"),
+    (C_BRAND, "为什么支持多模型？",
+     "Tree 提供完整决策路径(可审计)；XGBoost/LightGBM 精度更高；非树模型通过 Lv0 基线偏差诊断实现可解释性；--model 一键切换，Pipeline 架构共用"),
     (C_GREEN, "为什么用 MQTT 而非 HTTP？",
      "IIoT 事实标准：发布/订阅解耦设备与消费者；QoS 消息保证；二进制协议带宽低；与 EMQX/HiveMQ/AWS IoT 生态兼容"),
     (C_AMBER, "为什么用 SSE 而非 WebSocket？",
      "前端只需单向接收推送；SSE 基于 HTTP 无需协议升级；浏览器原生断线重连；实现复杂度远低于 WebSocket"),
     (C_RED, "为什么需要去抖迟滞？",
-     "传感器噪声和瞬态工况会导致等级边界抖动；上升快速确认（3次），恢复慢速确认（5次），符合工业\"报警易·解除难\"需求"),
+     "传感器噪声和瞬态工况导致等级边界抖动；上升快速确认（3次），恢复慢速确认（5次），符合工业\"报警容易解除难\"需求"),
     (C_PURPLE, "为什么用时间序列分割？",
      "避免随机切分导致未来信息泄露到训练集，使评估结果更接近真实在线部署场景，每个 asset 独立切分保证评估严谨性"),
-    (RGBColor(0xEC, 0x48, 0x99), "为什么 feature_set=online？",
-     "训练时只使用在线可实时计算的特征列，避免大量离线特征被中位数填充成常数，导致预测结果长期不变化"),
+    (C_PINK, "为什么 feature_set=online？",
+     "训练时只用在线打分可实时计算的特征列，避免大量离线特征被中位数填充成常数，导致预测结果长期不变化"),
 ]
 
 for i, (accent, title, body) in enumerate(decisions):
     cx = 0.8 if i % 2 == 0 else 7.0
     cy = 1.4 + (i // 2) * 1.8
     add_rect(s, cx, cy, 5.8, 1.6, C_WHITE, C_BORDER)
-    # accent top border
     add_rect(s, cx, cy, 5.8, 0.05, accent, None)
     add_text_box(s, cx + 0.2, cy + 0.12, 5.4, 0.3, title, font_size=13, color=C_DARK, bold=True)
     add_text_box(s, cx + 0.2, cy + 0.55, 5.4, 0.95, body, font_size=11, color=C_MUTED)
 
 # Insight
-add_rect(s, 0.8, 6.9, 11.7, 0.0, C_AMBER, None)
-add_text_box(s, 11.5, 7.1, 1.5, 0.3, "13 / 17", font_size=10, color=C_MUTED, align=PP_ALIGN.RIGHT)
+add_insight_box(s, 0.8, 6.9, 11.7, 0.0, "")
+add_text_box(s, 0.8, 6.9, 11.7, 0.0, "", font_size=8, color=C_AMBER2)
+add_slide_num(s, 15)
 
 
 # ═══════════════════════════════════════════
-#  SLIDE 14: SECTION - Deploy & Extend
+#  SLIDE 16: SECTION - Deploy & Extend
 # ═══════════════════════════════════════════
-s = add_blank_slide()
-fill_bg(s, C_DARK)
-add_text_box(s, 1, 2.6, 11.3, 1.2, "部署与扩展", font_size=42,
-             color=C_WHITE, bold=True, align=PP_ALIGN.CENTER)
-add_text_box(s, 1, 3.9, 11.3, 0.8,
-             "一键启动 · Docker 部署 · 接入真实设备 · 模型替换",
-             font_size=18, color=C_MUTED, align=PP_ALIGN.CENTER)
-add_text_box(s, 11.5, 7.1, 1.5, 0.3, "14 / 17", font_size=10, color=C_MUTED, align=PP_ALIGN.RIGHT)
+add_section_slide("部署与扩展", "一键启动 · Docker 部署 · 接入真实设备 · 模型替换", 16)
 
 
 # ═══════════════════════════════════════════
-#  SLIDE 15: Deploy & Extend Detail
+#  SLIDE 17: Deploy & Extend Detail
 # ═══════════════════════════════════════════
 s = add_blank_slide()
 fill_bg(s, C_BG)
-add_text_box(s, 0.8, 0.4, 11, 0.6, "部署方案 + 扩展指南", font_size=28, color=C_DARK, bold=True)
-add_text_box(s, 0.8, 0.9, 11, 0.3, "从开发到生产，从仿真到真实", font_size=12, color=C_MUTED)
+add_content_title(s, "部署方案 + 扩展指南", "从开发到生产，从仿真到真实")
 
 # One-click start
-add_code_block(s, 0.8, 1.4, 5.8, 0.7,
-    '# 一键启动\n'
-    'bash start.sh\n'
-    '# 前端 http://localhost:5173\n'
-    '# 后端 http://localhost:5000\n'
-    '# 账号 admin / admin123')
+add_card(s, 0.8, 1.4, 5.8, 1.6, "一键启动", [
+    "$ bash start.sh",
+    "",
+    "启动后访问:",
+    "  前端 http://localhost:5173",
+    "  后端 http://localhost:5000",
+    "  账号 admin / admin123",
+], title_size=14, body_size=10)
 
 # Docker compose
-add_code_block(s, 7.0, 1.4, 5.8, 2.2,
+add_code_block(s, 7.0, 1.4, 5.8, 1.6,
     '# Docker Compose\n'
     'services:\n'
     '  emqx:   image: emqx/emqx\n'
     '  mysql:  image: mysql:8\n'
-    '          environment:\n'
-    '            MYSQL_ROOT_PASSWORD: root\n'
-    '            MYSQL_DATABASE: ihealthsim\n'
     '  backend:  build: .\n'
     '  frontend: build: ./frontend')
 
 # Real device integration
-add_card(s, 0.8, 3.8, 5.8, 1.8, "接入真实设备 — 零代码改动", [
+add_card(s, 0.8, 3.2, 5.8, 2.2, "接入真实设备 — 零代码改动", [
     "只需确保 MQTT 消息格式一致：",
     '{',
     '  "ts_ms": 1710000000000,',
@@ -676,50 +725,47 @@ add_card(s, 0.8, 3.8, 5.8, 1.8, "接入真实设备 — 零代码改动", [
 ], title_size=14, body_size=9)
 
 # Extend
-add_card(s, 7.0, 3.8, 5.8, 1.8, "扩展方向", [
-    "🔧 替换模型：任何 sklearn 兼容分类器",
-    "  → 修改 train.py + 对齐 ONLINE_FEATURE_COLS",
+add_card(s, 7.0, 3.2, 5.8, 2.2, "扩展方向", [
+    "✅ v0.2.0 已完成: XGBoost/LightGBM 可选",
+    "   ECharts 历史趋势 · 报警规则引擎",
+    "   z-score 偏差诊断 · 多模型解释对比",
     "",
-    "📊 增加点位：四点对齐",
-    "  → step() → features.py → train.py → Dashboard.vue",
-    "",
-    "📈 未来规划",
-    "  → XGBoost/LightGBM · ECharts 历史趋势",
-    "  → 报警规则引擎 · Docker 一键部署 · i18n",
+    "🔧 替换模型: sklearn 兼容分类器",
+    "📊 增加点位: step()→features.py→train.py→Dashboard.vue",
+    "📈 未来: 更多设备类型 · Docker · WebSocket · i18n",
 ], title_size=14, body_size=9)
 
-add_text_box(s, 11.5, 7.1, 1.5, 0.3, "15 / 17", font_size=10, color=C_MUTED, align=PP_ALIGN.RIGHT)
+add_slide_num(s, 17)
 
 
 # ═══════════════════════════════════════════
-#  SLIDE 16: Tech Stack Summary
+#  SLIDE 18: Tech Stack Summary
 # ═══════════════════════════════════════════
 s = add_blank_slide()
 fill_bg(s, C_BG)
-add_text_box(s, 0.8, 0.4, 11, 0.6, "技术栈总览", font_size=28, color=C_DARK, bold=True)
-add_text_box(s, 0.8, 0.9, 11, 0.3, "项目依赖全景图", font_size=12, color=C_MUTED)
+add_content_title(s, "技术栈总览", "项目依赖全景图")
 
 # 3 columns
 stacks = [
-    ("Python 核心", C_BRAND, ["numpy + pandas 数据处理", "scikit-learn 决策树", "joblib 模型持久化", "rich CLI 美化"]),
+    ("Python 核心", C_BRAND, ["numpy + pandas 数据处理", "scikit-learn 决策树", "XGBoost + LightGBM", "joblib 模型持久化", "rich CLI 美化输出"]),
     ("网络与通信", C_GREEN, ["EMQX MQTT Broker", "paho-mqtt 客户端", "Flask REST API", "SSE 事件推送"]),
-    ("前端 + 数据库", C_PURPLE, ["Vue 3 + Vue Router", "Vite 构建工具", "MySQL 用户/事件存储", "JWT (PyJWT) 认证"]),
+    ("前端 + 数据库", C_PURPLE, ["Vue 3 + Vue Router", "ECharts 趋势图表", "Vite 构建工具", "MySQL 用户/事件存储", "JWT (PyJWT) 认证"]),
 ]
 for i, (title, color, items) in enumerate(stacks):
     cx = 0.8 + i * 4.2
-    add_card(s, cx, 1.4, 3.9, 2.2, title, ["• " + it for it in items], title_size=14, body_size=11)
+    add_card(s, cx, 1.4, 3.9, 2.5, title, ["• " + it for it in items], title_size=14, body_size=11)
 
 # Project scale
-add_text_box(s, 0.8, 3.9, 5, 0.3, "项目规模", font_size=14, color=C_DARK, bold=True)
+add_text_box(s, 0.8, 4.2, 5, 0.3, "项目规模", font_size=14, color=C_DARK, bold=True)
 metrics = [
     ("12+", "CLI 子命令", C_BRAND),
     ("10+", "REST API 端点", C_GREEN),
-    ("7", "后端模块", C_PURPLE),
+    ("8", "后端模块", C_PURPLE),
     ("4", "前端页面", C_AMBER),
 ]
 for i, (num, label, color) in enumerate(metrics):
     cx = 0.8 + i * 3.1
-    shape = add_rect(s, cx, 4.3, 2.8, 1.2, C_WHITE, C_BORDER)
+    shape = add_rect(s, cx, 4.6, 2.8, 1.2, C_WHITE, C_BORDER)
     tf = shape.text_frame
     tf.word_wrap = True
     p = tf.paragraphs[0]
@@ -734,21 +780,11 @@ for i, (num, label, color) in enumerate(metrics):
     p2.font.color.rgb = C_MUTED
     p2.alignment = PP_ALIGN.CENTER
 
-# Key libs
-add_text_box(s, 0.8, 5.8, 5, 0.3, "关键依赖", font_size=14, color=C_DARK, bold=True)
-add_table(s, 0.8, 6.1, [3.0, 3.0, 3.0, 3.0],
-          ["Python", "版本", "Node.js", "版本"],
-          [["numpy", "≥2.0", "vue", "3.x"],
-           ["pandas", "≥2.2", "vue-router", "4.x"],
-           ["scikit-learn", "≥1.5", "vite", "5.x"],
-           ["flask", "≥3.0", "", ""],
-           ["paho-mqtt", "≥2.1", "", ""]])
-
-add_text_box(s, 11.5, 7.1, 1.5, 0.3, "16 / 17", font_size=10, color=C_MUTED, align=PP_ALIGN.RIGHT)
+add_slide_num(s, 18)
 
 
 # ═══════════════════════════════════════════
-#  SLIDE 17: END
+#  SLIDE 19: END
 # ═══════════════════════════════════════════
 s = add_blank_slide()
 fill_bg(s, C_DARK)
@@ -756,7 +792,7 @@ add_rect(s, 0, 0, W.inches, 0.08, C_BRAND, None)
 
 icon_shape = s.shapes.add_shape(MSO_SHAPE.OVAL, Inches(5.9), Inches(1.8), Inches(1.5), Inches(1.5))
 icon_shape.fill.solid()
-icon_shape.fill.fore_color.rgb = RGBColor(0x1E, 0x29, 0x3B)
+icon_shape.fill.fore_color.rgb = C_CODE_BG
 icon_shape.line.color.rgb = RGBColor(0x33, 0x44, 0x55)
 icon_shape.line.width = Pt(1)
 tf = icon_shape.text_frame
@@ -769,12 +805,12 @@ p.alignment = PP_ALIGN.CENTER
 add_text_box(s, 0.5, 3.6, 12.3, 1.2, "谢谢", font_size=48,
              color=C_WHITE, bold=True, align=PP_ALIGN.CENTER)
 add_text_box(s, 0.5, 4.6, 12.3, 0.8,
-             "iHealthSim — 工业设备健康状态评估系统\n从仿真到实时看板的完整链路",
+             "iHealthSim — 工业设备健康状态评估系统\n多模型 · 报警引擎 · 趋势图表 · 完整链路",
              font_size=18, color=C_MUTED, align=PP_ALIGN.CENTER)
 add_text_box(s, 0.5, 5.8, 12.3, 0.5,
              "详细文档: doc/ARCHITECTURE.md  |  一键启动: bash start.sh",
              font_size=13, color=C_MUTED, align=PP_ALIGN.CENTER)
-add_text_box(s, 11.5, 7.1, 1.5, 0.3, "17 / 17", font_size=10, color=C_MUTED, align=PP_ALIGN.RIGHT)
+add_slide_num(s, 19)
 
 
 # ═══════════════════════════════════════════

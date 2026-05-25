@@ -3,6 +3,7 @@
     <nav v-if="isLoggedIn" class="topbar">
       <div class="topbar-left">
         <router-link to="/dashboard" class="brand">iHealthSim</router-link>
+        <router-link to="/diagnosis" class="nav-link">诊断报告</router-link>
         <router-link v-if="userRole === 'admin'" to="/admin" class="nav-link">权限管理</router-link>
       </div>
       <div class="topbar-right">

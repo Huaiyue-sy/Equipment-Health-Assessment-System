@@ -117,18 +117,24 @@
 
     <!-- 报警区 -->
     <div class="alarms-section" v-if="activeAlarms.length">
-      <div class="alarm-header">
+      <div class="alarm-header" @click="alarmsCollapsed = !alarmsCollapsed">
         <h3 class="card-head alarm-head-title">
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"/><path d="M13.73 21a2 2 0 0 1-3.46 0"/></svg>
           当前报警 ({{ activeAlarms.length }})
         </h3>
+        <span class="alarm-collapse-icon" :class="{ collapsed: alarmsCollapsed }">▾</span>
       </div>
-      <div class="alarm-list">
+      <div class="alarm-list" :class="{ collapsed: alarmsCollapsed }">
         <div v-for="(a, i) in activeAlarms" :key="i" class="alarm-item" :class="'alarm-' + a.severity">
           <span class="alarm-type-badge">{{ alarmTypeText(a.rule_type) }}</span>
           <span class="alarm-msg">{{ a.message }}</span>
           <span class="alarm-time">{{ formatAlarmTime(a.ts_ms) }}</span>
         </div>
+      </div>
+      <div class="alarm-summary" v-if="alarmsCollapsed">
+        共 {{ activeAlarms.length }} 条报警 —
+        <span class="alarm-summary-preview">{{ activeAlarms.slice(0, 2).map(a => a.message).join(' / ') }}</span>
+        <template v-if="activeAlarms.length > 2"> ...</template>
       </div>
     </div>
 
@@ -301,6 +307,7 @@ function switchDevice(id) {
 }
 
 const replaying = ref(false)
+const alarmsCollapsed = ref(false)
 async function startReplay() {
   if (replaying.value) return
   replaying.value = true
@@ -868,6 +875,26 @@ onBeforeUnmount(() => {
   padding: 12px 20px;
   border-bottom: 1px solid #fee2e2;
   background: #fef2f2;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  cursor: pointer;
+  user-select: none;
+}
+
+.alarm-header:hover {
+  background: #fee2e2;
+}
+
+.alarm-collapse-icon {
+  font-size: 14px;
+  color: #b91c1c;
+  transition: transform 0.25s ease;
+  line-height: 1;
+}
+
+.alarm-collapse-icon.collapsed {
+  transform: rotate(-90deg);
 }
 
 .alarm-head-title {
@@ -881,6 +908,13 @@ onBeforeUnmount(() => {
 .alarm-list {
   display: flex;
   flex-direction: column;
+  max-height: 800px;
+  overflow: hidden;
+  transition: max-height 0.3s ease;
+}
+
+.alarm-list.collapsed {
+  max-height: 0;
 }
 
 .alarm-item {
@@ -936,6 +970,21 @@ onBeforeUnmount(() => {
   flex-shrink: 0;
   font-variant-numeric: tabular-nums;
   opacity: 0.7;
+}
+
+.alarm-summary {
+  padding: 8px 20px;
+  font-size: 12px;
+  color: #b91c1c;
+  background: #fef2f2;
+  border-top: 1px solid #fee2e2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.alarm-summary-preview {
+  color: #92400e;
 }
 
 /* ── Status Bar ── */
