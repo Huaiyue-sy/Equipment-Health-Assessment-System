@@ -10,7 +10,10 @@ iHealthSim 是一套**工业设备健康状态评估原型系统**，用于演�
 
 - **零硬件依赖**：所有设备数据均由仿真器生成，无需连接真实 PLC/传感器
 - **完整链路**：覆盖 仿真→传输→采集→特征→训练→打分→展示 全流程
-- **可审计**：决策树模型输出完整决策路径，非黑盒预测
+- **多模型可选**：支持 Decision Tree / XGBoost / LightGBM 三种模型，非树模型通过健康基线偏差诊断实现可解释性
+- **动态报警**：阈值+趋势+组合规则引擎，实时触发并通过 SSE 推送
+- **历史趋势**：ECharts 图表实时展示健康分数与遥测变化趋势
+- **可审计**：决策树输出完整决策路径，XGBoost/LightGBM 输出基于 Lv0 基线的偏差诊断
 - **可扩展**：MQTT 消息格式标准，可无缝替换为真实设备数据源
 
 ### 1.3 适用场景
@@ -185,10 +188,10 @@ DeviceSimConfig(
 
 ### 3.3 `src/ihealthsim/train.py` — 模型训练
 
-使用 scikit-learn 的 Pipeline：
+使用 scikit-learn 的 Pipeline，支持三种模型：
 
 ```
-ColumnTransformer(SimpleImputer(median)) → DecisionTreeClassifier
+ColumnTransformer(SimpleImputer(median)) → DecisionTreeClassifier / XGBClassifier / LGBMClassifier
 ```
 
 #### 训练特性
@@ -196,16 +199,18 @@ ColumnTransformer(SimpleImputer(median)) → DecisionTreeClassifier
 - **时间序列分割**：按窗口时间顺序切分训练/测试集（非随机，避免未来信息泄露）
 - **在线特征子集**：`feature_set=online` 时只使用 OnlineScorer 可实时计算的特征，避免训练-在线不一致
 - **类别平衡**：`class_weight='balanced'` 处理健康等级不平衡分布
-- **模型打包**：将 pipeline + feature_cols + report 整体序列化为 joblib 文件
+- **特征统计存储**：对每个健康等级（Lv0~3）计算各特征的均值/标准差，存入 bundle 供在线推理时的 z-score 偏差诊断
+- **模型打包**：将 pipeline + feature_cols + feature_stats + report 整体序列化为 joblib 文件
 
 #### 训练参数
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| max_depth | 5 | 决策树最大深度 |
+| max_depth | 5 | 树最大深度 |
 | min_samples_leaf | 50 | 叶节点最小样本数 |
 | feature_set | online | 特征集选择（online/all） |
 | test_size | 0.3 | 测试集比例 |
+| model | tree | 模型类型：tree（决策树）/ xgb（XGBoost）/ lgb（LightGBM） |
 
 ### 3.4 `src/ihealthsim/scoring.py` — 在线打分
 
@@ -221,7 +226,10 @@ ColumnTransformer(SimpleImputer(median)) → DecisionTreeClassifier
    - `vib_rms_std`, `temp_c_std`, `vib_rms_norm`
 5. **预测**：通过 pipeline 得到 level + proba
 6. **去抖**：基于等级的迟滞逻辑
-7. **解释**：遍历决策树路径，输出可读的决策链
+7. **解释**：
+   - 决策树：遍历决策树路径，输出可读的决策链
+   - XGBoost/LightGBM：与训练时存储的 Lv0 健康基线对比，计算 z-score 判定偏高/偏低/正常
+8. **报警**：运行 AlarmEngine 评估遥测快照，触发报警事件
 
 #### 去抖配置
 
@@ -248,7 +256,37 @@ DebounceConfig(
 | `live` | 订阅 MQTT 在线打分输出 |
 | `serve` | 启动 FastAPI 服务 |
 
-### 3.6 后端模块
+### 3.6 `src/ihealthsim/alarm.py` — 报警规则引擎
+
+在线打分后实时评估遥测快照，触发报警事件通过 SSE 推送。
+
+#### 规则类型
+
+| 类型 | 类 | 逻辑 | 示例 |
+|------|-----|------|------|
+| 阈值 | ThresholdRule | 单点位超过阈值 | `vib_rms > 4.5 mm/s` → warning |
+| 趋势 | TrendRule | N 窗口内持续上升/下降超过比例 | `temp_c` 5 窗口上升 10% → warning |
+| 组合 | CombinationRule | 多条件 AND/OR 同时满足 | 高温+高振动同时触发 → critical |
+
+#### 默认规则
+
+| 规则名 | 类型 | 条件 | 严重度 |
+|--------|------|------|--------|
+| 振动过高 | threshold | vib_rms > 4.5 | warning |
+| 振动严重超标 | threshold | vib_rms > 7.1 | critical |
+| 温度偏高 | threshold | temp_c > 85 | warning |
+| 温度严重偏高 | threshold | temp_c > 105 | critical |
+| 电流偏大 | threshold | motor_current_a > 12 | warning |
+| 电流严重过大 | threshold | motor_current_a > 15 | critical |
+| 转速异常偏低 | threshold | rpm < 1000 | warning |
+| 振动持续上升 | trend | vib_rms 5窗上升 10% | warning |
+| 温度持续上升 | trend | temp_c 5窗上升 5% | warning |
+| 高温+高振动 | combination | temp_c>75 AND vib_rms>3.5 | critical |
+| 高温+大电流 | combination | temp_c>80 AND motor_current_a>10 | critical |
+
+规则基于 ISO 10816 振动标准和电机绝缘等级标准设计，所有规则均可通过 `AlarmEngine.add_*()` 方法扩展。
+
+### 3.7 后端模块
 
 #### `backend/app.py` — Flask 主应用
 
@@ -276,7 +314,7 @@ DebounceConfig(
 - `SseHub`：发布-订阅模式的事件中心
 - 支持多客户端同时订阅
 - 自动丢弃慢消费者的过期消息
-- 事件类型：`telemetry` / `prediction` / `flow`
+- 事件类型：`telemetry` / `prediction` / `alarm` / `flow`
 
 #### `backend/mqtt_subscriber.py` — MQTT 订阅
 
@@ -289,7 +327,7 @@ DebounceConfig(
 - 在锁保护下调用 OnlineScorer.ingest()
 - 将 HealthResult 写入 State 和 SSE Hub
 
-### 3.7 前端模块
+### 3.8 前端模块
 
 #### 路由设计
 
@@ -307,9 +345,11 @@ DebounceConfig(
 - **预测概览**：
   - 左侧：健康分数环形图 + 等级徽章
   - 右侧：四级概率分布柱状图
-- **诊断依据时间线**：解析决策路径，渲染为步骤式流程图，标注正常/异常
+- **诊断依据时间线**：解析决策树路径或 XGBoost/LightGBM 偏差诊断，渲染为步骤式流程图，标注正常/异常
+- **ECharts 趋势图表**：健康分数趋势线（含 66/33 分警戒线）+ 健康等级阶梯变化
+- **报警面板**：实时显示活跃报警，按严重度（warning/critical）颜色区分，按规则类型（阈值/趋势/组合）标注，60s 自动清除
 - **实时遥测表**：最新各点位数值
-- **事件日志**：健康等级变化、异常告警
+- **事件日志**：健康等级变化、报警事件
 - **诊断报告**：设备概览、异常指标、决策路径、维护建议
 
 **恶化重演**功能：点击按钮重新启动 3 台设备的完整退化过程。
@@ -511,12 +551,14 @@ services:
 
 ## 7. 关键设计决策
 
-### 7.1 为什么用决策树而不是深度学习？
+### 7.1 为什么支持多模型（Tree / XGBoost / LightGBM）？
 
-- **可解释性**：决策树输出完整决策路径，可用于审计和调试
-- **数据量**：仿真数据通常只有几千到几万个窗口，决策树足够
+- **决策树**：可解释性最强，输出完整决策路径，适合审计和调试场景
+- **XGBoost/LightGBM**：集成学习方法，通常具有更高的预测精度和泛化能力
+- **统一 Pipeline**：三种模型共用 sklearn Pipeline 架构，通过 `--model` 参数一键切换
+- **可解释性保障**：非树模型通过训练时存储的 Lv0 健康基线统计，推理时计算 z-score 偏差，提供"偏高/偏低/正常"诊断提示
+- **数据量**：仿真数据通常只有几千到几万个窗口，三种模型均适用
 - **部署简单**：单个 joblib 文件，无需 GPU，推理速度毫秒级
-- **原型性质**：本系统面向演示和验证，决策树是合理的 baseline
 
 ### 7.2 为什么用 MQTT 而不是 HTTP/WebSocket？
 
@@ -550,6 +592,8 @@ MQTT 是工业物联网的事实标准协议：
 numpy>=2.0           # 数值计算
 pandas>=2.2          # 数据处理
 scikit-learn>=1.5    # 机器学习
+xgboost>=2.0         # XGBoost 集成学习（可选）
+lightgbm>=4.3        # LightGBM 集成学习（可选）
 joblib>=1.4          # 模型序列化
 paho-mqtt>=2.1       # MQTT 客户端
 flask>=3.0           # Web 框架
@@ -568,6 +612,7 @@ rich>=13.7           # CLI 美化输出
 vue@3                # UI 框架
 vue-router@4         # 路由
 vite@5               # 构建工具
+echarts@5            # 数据可视化图表
 @vitejs/plugin-vue   # Vite Vue 插件
 ```
 
@@ -578,15 +623,16 @@ vite@5               # 构建工具
 | 版本 | 日期 | 变更 |
 |------|------|------|
 | 0.1.0 | 2025-05 | 初始版本：仿真器 + 决策树 + MQTT + Flask + Vue |
+| 0.2.0 | 2026-05 | 多模型支持 (Tree/XGBoost/LightGBM)，报警规则引擎，ECharts 趋势图表，z-score 偏差诊断 |
 
 ---
 
 ## 10. 项目路线图
 
+- [x] 支持 XGBoost/LightGBM 模型可选
+- [x] ECharts 历史趋势图表
+- [x] 报警规则引擎（阈值+趋势+组合规则）
 - [ ] 支持更多设备类型（压缩机、风机等）
-- 替换为 XGBoost/LightGBM 模型可选
-- 增加历史趋势图表（ECharts）
-- 报警规则引擎（阈值+趋势+组合规则）
 - [ ] Docker 一键部署
 - [ ] WebSocket 双向通信
 - [ ] 多语言支持（i18n）

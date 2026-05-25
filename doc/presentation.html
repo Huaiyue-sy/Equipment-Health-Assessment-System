@@ -553,7 +553,7 @@
 <body>
 
 <div class="progress-bar" id="progress"></div>
-<div class="slide-num" id="slideNum">1 / 15</div>
+<div class="slide-num" id="slideNum">1 / 19</div>
 <div class="nav-hint">← → 方向键翻页 | F 全屏</div>
 
 <div class="slides" id="slides">
@@ -564,15 +564,15 @@
   <h1>iHealthSim</h1>
   <p class="subtitle">工业设备健康状态评估系统<br>全仿真 · 完整链路 · 实时看板</p>
   <div class="meta">
-    <span>版本 0.1.0</span>
-    <span>2025-05</span>
+    <span>版本 0.2.0</span>
+    <span>2026-05</span>
   </div>
 </div>
 
 <!-- 2: Section - 项目概述 -->
 <div class="slide slide-section">
   <h2>项目概述</h2>
-  <p class="section-desc">基于仿真设备 + MQTT + 决策树 + Vue 前端的工业设备健康评估原型系统</p>
+  <p class="section-desc">多模型 + 报警引擎 + ECharts 趋势 + 完整数据链路</p>
 </div>
 
 <!-- 3: Project Overview Detail -->
@@ -814,20 +814,22 @@
   <div class="grid2">
     <div>
       <div class="card" style="margin-bottom:16px">
-        <h4>训练 Pipeline</h4>
+        <h4>训练 Pipeline（3 种模型可选）</h4>
         <div class="code-block" style="margin-top:8px">
 ColumnTransformer(SimpleImputer(median))
        │
        ▼
-DecisionTreeClassifier(
-  max_depth=<span class="num">5</span>,
-  min_samples_leaf=<span class="num">50</span>,
-  class_weight=<span class="str">"balanced"</span>
-)
+<span class="str">--model tree</span> → DecisionTreeClassifier
+<span class="str">--model xgb</span>  → XGBClassifier
+<span class="str">--model lgb</span>  → LGBMClassifier
+
+<span class="cmt"># 训练时自动计算 Lv0~3 特征基线统计</span>
+<span class="cmt"># 供在线推理 z-score 偏差诊断</span>
         </div>
         <div style="margin-top:12px;font-size:12px;color:var(--c-muted)">
-          <strong>时间序列分割</strong>: 按窗口时间顺序切分 train/test，避免未来信息泄露<br>
-          <strong>feature_set=online</strong>: 只用 OnlineScorer 可实时计算的特征训练
+          <strong>时间序列分割</strong>: 按窗口时间顺序切分，避免未来信息泄露<br>
+          <strong>feature_set=online</strong>: 只用可实时计算的特征训练<br>
+          <strong>feature_stats</strong>: 训练后按健康等级计算均值/std 存入模型
         </div>
       </div>
       <div class="card">
@@ -856,7 +858,7 @@ DecisionTreeClassifier(
           <div class="flow-arrow-down"></div>
           <div class="flow-step"><div class="flow-num" style="width:24px;height:24px;font-size:11px">5</div><div class="flow-text" style="font-size:12px">去抖确认 &rarr; HealthResult</div></div>
           <div class="flow-arrow-down"></div>
-          <div class="flow-step"><div class="flow-num" style="width:24px;height:24px;font-size:11px">6</div><div class="flow-text" style="font-size:12px">遍历决策树生成可读解释路径</div></div>
+          <div class="flow-step"><div class="flow-num" style="width:24px;height:24px;font-size:11px">6</div><div class="flow-text" style="font-size:12px">Tree: 遍历决策路径 / XGB/LGB: z-score 偏差诊断</div></div>
         </div>
       </div>
       <div class="card" style="border-top: 3px solid var(--c-amber)">
@@ -874,10 +876,117 @@ DecisionTreeClassifier(
   </div>
 </div>
 
-<!-- 10: Section - 后端+ 前端 -->
+<!-- 10: Multi-Model Explanation -->
+<div class="slide slide-content">
+  <h2>多模型解释对比</h2>
+  <p class="slide-sub">同一预测结果，三种模型提供不同深度的诊断依据</p>
+
+  <div class="grid2" style="margin-bottom:20px">
+    <div class="card" style="border-top: 3px solid var(--c-green)">
+      <h4 style="color:#065f46">决策树 — 完整决策路径</h4>
+      <div class="code-block" style="margin-top:10px;font-size:11px">
+vib_rms_mean &gt; 2.351 (val=3.142) →
+temp_c_mean &lt;= 55.200 (val=52.100) →
+vib_rms_norm &gt; 1.890 (val=2.410) →
+<span class="kw">→ Lv2 (警告)</span>
+      </div>
+      <p style="font-size:12px;color:var(--c-muted);margin-top:8px">每步可审计，从根节点到叶节点逐步判定</p>
+    </div>
+    <div class="card" style="border-top: 3px solid var(--c-brand)">
+      <h4 style="color:#1e40af">XGBoost/LightGBM — 基线偏差诊断</h4>
+      <div class="code-block" style="margin-top:10px;font-size:11px">
+vib_rms_mean&gt;偏高↑(val=4.52, z=+3.1, imp=0.28) →
+temp_c_mean&gt;略高(val=72.3, z=+1.5, imp=0.19) →
+<span class="kw">→ Lv2 (警告)</span>
+      </div>
+      <p style="font-size:12px;color:var(--c-muted);margin-top:8px">与 Lv0 健康基线对比，z-score 判定偏离程度</p>
+    </div>
+  </div>
+
+  <div class="card">
+    <h4>z-score 偏离判定标准</h4>
+    <div class="grid4" style="margin-top:10px">
+      <div style="text-align:center;padding:12px;background:#dcfce7;border-radius:8px">
+        <div style="font-size:20px;font-weight:700;color:#15803d">|z| ≤ 1.0</div>
+        <div style="font-size:12px;color:#15803d">正常</div>
+      </div>
+      <div style="text-align:center;padding:12px;background:#fef3c7;border-radius:8px">
+        <div style="font-size:20px;font-weight:700;color:#b45309">1.0 < |z| ≤ 2.0</div>
+        <div style="font-size:12px;color:#b45309">略高/略低</div>
+      </div>
+      <div style="text-align:center;padding:12px;background:#fee2e2;border-radius:8px">
+        <div style="font-size:20px;font-weight:700;color:#b91c1c">|z| > 2.0</div>
+        <div style="font-size:12px;color:#b91c1c">偏高↑/偏低↓</div>
+      </div>
+      <div style="text-align:center;padding:12px;background:#f1f5f9;border-radius:8px">
+        <div style="font-size:13px;font-weight:600;color:#64748b">训练时自动计算</div>
+        <div style="font-size:11px;color:#64748b">Lv0~3 每类均值/std 存入模型</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- 11: Alarm Rule Engine -->
+<div class="slide slide-content">
+  <h2>报警规则引擎</h2>
+  <p class="slide-sub">阈值 + 趋势 + 组合 — 11 条默认规则，基于 ISO 10816 振动标准</p>
+
+  <div class="grid3" style="margin-bottom:20px">
+    <div class="card" style="border-top: 3px solid var(--c-amber)">
+      <h4 style="color:#92400e">阈值规则 (7 条)</h4>
+      <table class="tbl" style="margin-top:8px">
+        <tr><th>点位</th><th>条件</th><th>级别</th></tr>
+        <tr><td>vib_rms</td><td>&gt; 4.5 mm/s</td><td><span class="badge badge-amber">warning</span></td></tr>
+        <tr><td>vib_rms</td><td>&gt; 7.1 mm/s</td><td><span class="badge badge-red">critical</span></td></tr>
+        <tr><td>temp_c</td><td>&gt; 85°C</td><td><span class="badge badge-amber">warning</span></td></tr>
+        <tr><td>temp_c</td><td>&gt; 105°C</td><td><span class="badge badge-red">critical</span></td></tr>
+        <tr><td>motor_current_a</td><td>&gt; 12 A</td><td><span class="badge badge-amber">warning</span></td></tr>
+        <tr><td>motor_current_a</td><td>&gt; 15 A</td><td><span class="badge badge-red">critical</span></td></tr>
+        <tr><td>rpm</td><td>&lt; 1000</td><td><span class="badge badge-amber">warning</span></td></tr>
+      </table>
+    </div>
+    <div class="card" style="border-top: 3px solid var(--c-brand)">
+      <h4 style="color:#1e40af">趋势规则 (2 条)</h4>
+      <div style="margin-top:12px;font-size:12px;color:var(--c-body);line-height:1.8">
+        <div style="padding:8px;background:#f8fafc;border-radius:6px;margin-bottom:8px">
+          <strong>振动持续上升</strong><br>
+          5 窗口内 vib_rms 上升 &gt;10%
+        </div>
+        <div style="padding:8px;background:#f8fafc;border-radius:6px">
+          <strong>温度持续上升</strong><br>
+          5 窗口内 temp_c 上升 &gt;5%
+        </div>
+      </div>
+      <p style="font-size:11px;color:var(--c-muted);margin-top:8px">每个 asset 独立窗口缓冲</p>
+    </div>
+    <div class="card" style="border-top: 3px solid var(--c-red)">
+      <h4 style="color:#991b1b">组合规则 (2 条)</h4>
+      <div style="margin-top:12px;font-size:12px;color:var(--c-body);line-height:1.8">
+        <div style="padding:8px;background:#fef2f2;border-radius:6px;margin-bottom:8px">
+          <strong>高温+高振动</strong><br>
+          temp_c&gt;75 AND vib_rms&gt;3.5<br>
+          <span class="badge badge-red">critical</span>
+        </div>
+        <div style="padding:8px;background:#fef2f2;border-radius:6px">
+          <strong>高温+大电流</strong><br>
+          temp_c&gt;80 AND current&gt;10<br>
+          <span class="badge badge-red">critical</span>
+        </div>
+      </div>
+      <p style="font-size:11px;color:var(--c-muted);margin-top:8px">AND 逻辑，多条件同时满足触发</p>
+    </div>
+  </div>
+
+  <div class="insight-box">
+    <strong>设计原则</strong>
+    每条规则独立评估 → 在线打分后立即运行 → 报警通过 SSE 实时推送前端 → 60s 后自动清除。规则基于 ISO 10816 振动标准、电机绝缘等级 (Class F)、电机过载保护标准。所有规则通过 <code>AlarmEngine.add_*()</code> 可扩展。
+  </div>
+</div>
+
+<!-- 12: Section - 后端+ 前端 -->
 <div class="slide slide-section">
   <h2>后端与前端的协作</h2>
-  <p class="section-desc">Flask + SSE + Vue 3 实时看板</p>
+  <p class="section-desc">Flask + SSE + Vue 3 + ECharts 实时看板</p>
 </div>
 
 <!-- 11: Backend + Frontend -->
@@ -899,7 +1008,7 @@ DecisionTreeClassifier(
     <div class="card">
       <div class="card-icon amber">📡</div>
       <h4>SSE 事件中心 (sse.py)</h4>
-      <p>发布-订阅模式，多客户端并发，自动丢弃慢消费者过期消息，3 类事件: telemetry/prediction/flow</p>
+      <p>发布-订阅模式，多客户端并发，自动丢弃慢消费者过期消息，4 类事件: telemetry/prediction/alarm/flow</p>
     </div>
     <div class="card">
       <div class="card-icon red">🔄</div>
@@ -927,7 +1036,9 @@ DecisionTreeClassifier(
         <li>状态指示条: MQTT/模型/数据延迟</li>
         <li>设备标签栏: 多设备切换 + 健康等级</li>
         <li>健康分数环形图 + 四级概率分布</li>
-        <li>诊断依据时间线 (决策路径渲染)</li>
+        <li>诊断依据时间线 (多模型格式兼容)</li>
+        <li>ECharts 趋势图: 健康分数+等级变化</li>
+        <li>报警面板: 颜色区分严重度, 自动清除</li>
         <li>实时遥测表 + 事件日志</li>
         <li>诊断报告 + 维护建议</li>
         <li>"恶化重演" 重新触发完整退化</li>
@@ -949,8 +1060,8 @@ DecisionTreeClassifier(
 
   <div class="why-grid">
     <div class="why-card" style="border-top-color:var(--c-brand)">
-      <h4>为什么用决策树而非深度学习？</h4>
-      <p>可解释性强：输出完整决策路径，非黑盒；仿真数据量（千-万级窗口）决策树足够；单个 joblib 文件部署，无需 GPU，推理毫秒级</p>
+      <h4>为什么支持多模型？</h4>
+      <p>Tree 提供完整决策路径(可审计)；XGBoost/LightGBM 精度更高；非树模型通过 Lv0 基线偏差诊断实现可解释性；--model 一键切换，Pipeline 架构共用</p>
     </div>
     <div class="why-card" style="border-top-color:var(--c-green)">
       <h4>为什么用 MQTT 而非 HTTP？</h4>
@@ -1033,7 +1144,8 @@ DecisionTreeClassifier(
   <div class="grid3">
     <div class="card"><div class="card-icon purple">🔧</div><h4>替换模型</h4><p>任何 sklearn 兼容分类器，修改 train.py + 对齐 ONLINE_FEATURE_COLS 即可</p></div>
     <div class="card"><div class="card-icon green">📊</div><h4>增加点位</h4><p>Simulator.step() → features.py → train.py → Dashboard.vue 四点对齐</p></div>
-    <div class="card"><div class="card-icon amber">📈</div><h4>未来规划</h4><p>XGBoost/LightGBM 可选 · ECharts 历史趋势 · 报警规则引擎 · i18n</p></div>
+    <div class="card"><div class="card-icon green">✅</div><h4>已完成 (v0.2.0)</h4><p>XGBoost/LightGBM 可选 · ECharts 历史趋势 · 报警规则引擎 · z-score 偏差诊断</p></div>
+    <div class="card"><div class="card-icon amber">📈</div><h4>未来规划</h4><p>更多设备类型 · Docker 部署 · WebSocket 双向通信 · i18n</p></div>
   </div>
 </div>
 
@@ -1049,6 +1161,7 @@ DecisionTreeClassifier(
       <div class="stack-col" style="margin-top:10px">
         <div class="stack-item"><span class="stack-dot py"></span>numpy + pandas 数据处理</div>
         <div class="stack-item"><span class="stack-dot py"></span>scikit-learn 决策树</div>
+        <div class="stack-item"><span class="stack-dot py"></span>XGBoost + LightGBM</div>
         <div class="stack-item"><span class="stack-dot py"></span>joblib 模型持久化</div>
         <div class="stack-item"><span class="stack-dot py"></span>rich CLI 美化输出</div>
       </div>
@@ -1068,6 +1181,7 @@ DecisionTreeClassifier(
       <h4>前端 + 数据库</h4>
       <div class="stack-col" style="margin-top:10px">
         <div class="stack-item"><span class="stack-dot fe"></span>Vue 3 + Vue Router</div>
+        <div class="stack-item"><span class="stack-dot fe"></span>ECharts 趋势图表</div>
         <div class="stack-item"><span class="stack-dot fe"></span>Vite 构建工具</div>
         <div class="stack-item"><span class="stack-dot db"></span>MySQL 用户/事件存储</div>
         <div class="stack-item"><span class="stack-dot db"></span>JWT (PyJWT) 认证</div>
@@ -1086,7 +1200,7 @@ DecisionTreeClassifier(
       <div style="font-size:12px;color:var(--c-muted)">REST API 端点</div>
     </div>
     <div class="card" style="text-align:center">
-      <div style="font-size:32px;font-weight:800;color:var(--c-purple)">7</div>
+      <div style="font-size:32px;font-weight:800;color:var(--c-purple)">8</div>
       <div style="font-size:12px;color:var(--c-muted)">后端模块</div>
     </div>
     <div class="card" style="text-align:center">
@@ -1100,7 +1214,7 @@ DecisionTreeClassifier(
 <div class="slide slide-end">
   <div class="logo-icon" style="background:rgba(255,255,255,0.1); width:64px;height:64px;font-size:28px">⚙️</div>
   <h2>谢谢</h2>
-  <p>iHealthSim — 工业设备健康状态评估系统<br>从仿真到实时看板的完整链路</p>
+  <p>iHealthSim — 工业设备健康状态评估系统<br>多模型 · 报警引擎 · 趋势图表 · 完整链路</p>
   <div class="meta" style="margin-top:32px">
     <span>docs: doc/ARCHITECTURE.md</span>
     <span>start: bash start.sh</span>

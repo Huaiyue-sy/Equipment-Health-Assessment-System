@@ -586,31 +586,55 @@ const FEATURE_DESCRIPTIONS = {
 const explainNodes = computed(() => {
   const raw = prediction.value?.explanation
   if (!raw) return []
-  return raw.split(' -> ').map((seg) => {
-    // 解析: "vib_rms_mean > 2.351 (val=3.142)" 或 "temp_c_mean <= 55.200 (val=52.100)"
-    const m = seg.match(/^(\S+)\s*(<=|>)\s*([\d.]+)\s*\(val=([\d.]+)\)/)
-    if (!m) return { feature: seg, description: '' }
 
-    const [, feat, op, threshold, value] = m
-    const name = FEATURE_NAMES[feat] || feat
-    const tVal = parseFloat(threshold)
-    const aVal = parseFloat(value)
-    const isHigh = aVal > tVal
-    const desc = FEATURE_DESCRIPTIONS[feat]
+  const sep = raw.includes('->') ? ' -> ' : (raw.includes('|') ? ' | ' : ' -> ')
 
-    let description = ''
-    if (desc) {
-      description = isHigh ? desc.high : desc.low
+  return raw.split(sep).map((seg) => {
+    // 解析决策树格式: "vib_rms_mean > 2.351 (val=3.142)"
+    const treeMatch = seg.match(/^(\S+)\s*(<=|>)\s*([\d.]+)\s*\(val=([\d.]+)\)/)
+    if (treeMatch) {
+      const [, feat, op, threshold, value] = treeMatch
+      const name = FEATURE_NAMES[feat] || feat
+      const tVal = parseFloat(threshold)
+      const aVal = parseFloat(value)
+      const isHigh = aVal > tVal
+      const desc = FEATURE_DESCRIPTIONS[feat]
+
+      let description = ''
+      if (desc) {
+        description = isHigh ? desc.high : desc.low
+      }
+      if (op === '>' && isHigh) {
+        description = `${name} ${aVal.toFixed(2)} > 阈值 ${tVal.toFixed(2)}，${description}`
+      } else if (op === '<=' && !isHigh) {
+        description = `${name} ${aVal.toFixed(2)} ≤ 阈值 ${tVal.toFixed(2)}，${description}`
+      } else {
+        description = `${name} ${aVal.toFixed(2)} ${op} ${tVal.toFixed(2)}，${description}`
+      }
+      return { feature: name, description, abnormal: op === '>' && isHigh }
     }
-    if (op === '>' && isHigh) {
-      description = `${name} ${aVal.toFixed(2)} > 阈值 ${tVal.toFixed(2)}，${description}`
-    } else if (op === '<=' && !isHigh) {
-      description = `${name} ${aVal.toFixed(2)} ≤ 阈值 ${tVal.toFixed(2)}，${description}`
-    } else {
-      description = `${name} ${aVal.toFixed(2)} ${op} ${tVal.toFixed(2)}，${description}`
+
+    // 解析 XGBoost/LightGBM 格式: "vib_rms_mean>偏高↑(val=3.21, z=+2.3, imp=0.23)"
+    const boostMatch = seg.match(/^(\S+)>(偏高↑|偏低↓|略高|略低|正常)\(val=([\d.]+),\s*z=([+\-\d.]+),\s*imp=([\d.]+)\)/)
+    if (boostMatch) {
+      const [, feat, direction, value, z, imp] = boostMatch
+      const name = FEATURE_NAMES[feat] || feat
+      const aVal = parseFloat(value)
+      const desc = FEATURE_DESCRIPTIONS[feat]
+      const isAbnormal = direction.includes('偏高') || direction.includes('偏低')
+
+      let description = ''
+      if (desc && direction.includes('偏高')) {
+        description = desc.high
+      } else if (desc && direction.includes('偏低')) {
+        description = desc.low
+      }
+      const zLabel = parseFloat(z) > 0 ? `(偏离${direction.replace(/[↑↓]/,'')}，z=${z})` : ''
+      description = `${name}=${aVal.toFixed(2)} ${direction} ${zLabel}，重要性=${parseFloat(imp).toFixed(2)}。${description}`
+      return { feature: name, description, abnormal: isAbnormal }
     }
 
-    return { feature: name, description, abnormal: op === '>' && isHigh }
+    return { feature: seg, description: seg, abnormal: false }
   })
 })
 

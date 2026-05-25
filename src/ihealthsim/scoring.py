@@ -29,6 +29,7 @@ class OnlineScorer:
         self.feature_cols: list[str] = list(bundle["feature_cols"])
         self.model_type: str = bundle.get("model_type", "tree")
         self.feature_importance: list[list] = bundle.get("feature_importance", [])
+        self.feature_stats: dict[int, dict[str, tuple[float, float]]] = bundle.get("feature_stats", {})
         self.window_s = window_s
         self.debounce = debounce or DebounceConfig()
         self.alarm_engine = alarm_engine or build_default_alarm_engine()
@@ -168,7 +169,7 @@ class OnlineScorer:
             return self._explain_feature_importance(x_df)
 
     def _explain_feature_importance(self, x_df: pd.DataFrame) -> str:
-        """XGBoost/LightGBM：用特征重要性 + 当前值生成解释。"""
+        """XGBoost/LightGBM：用特征重要性 + 与健康基线 (Lv0) 偏差生成诊断解释。"""
         if not self.feature_importance:
             return "model prediction (no explanation available)"
 
@@ -176,8 +177,27 @@ class OnlineScorer:
         x_transformed = pre.transform(x_df)
         row = {c: float(x_transformed[0, i]) for i, c in enumerate(self.feature_cols)}
 
+        # 取 Lv0（健康）的特征统计作为基线
+        baseline = self.feature_stats.get(0, {})
+
         parts = []
-        for fname, imp in self.feature_importance[:5]:
+        for fname, imp in self.feature_importance[:6]:
             val = row.get(fname, float("nan"))
-            parts.append(f"{fname}={val:.3f}(imp={imp:.4f})")
-        return " | ".join(parts)
+            stats = baseline.get(fname)
+            if stats is not None and np.isfinite(val):
+                mean, std = stats
+                z = (val - mean) / std
+                if z > 2.0:
+                    direction = "偏高↑"
+                elif z > 1.0:
+                    direction = "略高"
+                elif z < -2.0:
+                    direction = "偏低↓"
+                elif z < -1.0:
+                    direction = "略低"
+                else:
+                    direction = "正常"
+                parts.append(f"{fname}>{direction}(val={val:.3f}, z={z:+.1f}, imp={imp:.4f})")
+            else:
+                parts.append(f"{fname}={val:.3f}(imp={imp:.4f})")
+        return " -> ".join(parts)

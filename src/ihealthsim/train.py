@@ -161,6 +161,19 @@ def train_tree(features_csv: str, model_out: str, *, cfg: TrainConfig = TrainCon
     except Exception:
         pass
 
+    # 计算每类（健康等级）的归一化特征统计，供在线打分做对比解释
+    # 对已做 impute 的训练集，按 class 分组计算 mean/std
+    X_train_imp = pipe.named_steps["pre"].transform(X_train)
+    feature_stats: dict[int, dict[str, tuple[float, float]]] = {}
+    for label in sorted(y_train.unique()):
+        mask = (y_train == label).values
+        class_data = X_train_imp[mask]
+        stats = {}
+        for i, fname in enumerate(feature_cols):
+            col = class_data[:, i]
+            stats[fname] = (float(np.mean(col)), float(np.std(col)) + 1e-9)
+        feature_stats[int(label)] = stats
+
     bundle = {
         "pipeline": pipe,
         "feature_cols": feature_cols,
@@ -168,6 +181,7 @@ def train_tree(features_csv: str, model_out: str, *, cfg: TrainConfig = TrainCon
         "config": cfg,
         "model_type": cfg.model_type,
         "feature_importance": feature_importance,
+        "feature_stats": feature_stats,  # {0: {feat: (mean, std)}, 1: {...}, ...}
     }
     joblib.dump(bundle, model_out)
 

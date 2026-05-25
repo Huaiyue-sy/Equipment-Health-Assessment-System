@@ -1,6 +1,6 @@
 # iHealthSim — 工业设备健康状态评估系统
 
-基于 **仿真设备 + MQTT (EMQX) + 决策树 + Vue 前端** 的工业设备健康评估原型系统，实现从数据采集、特征工程、模型训练到实时在线评估的完整链路。
+基于 **仿真设备 + MQTT (EMQX) + 多模型（决策树/XGBoost/LightGBM）+ Vue 前端** 的工业设备健康评估原型系统，集成报警规则引擎与 ECharts 历史趋势图表，实现从数据采集、特征工程、模型训练到实时在线评估的完整链路。
 
 ## 系统架构
 
@@ -32,10 +32,11 @@
 | **设备仿真** | 模拟旋转设备（泵/电机），生成 rpm/load/vib_rms/temp_c/motor_current_a 遥测数据，支持渐进退化与故障注入 |
 | **MQTT 传输** | 仿真数据通过 MQTT 发布到 EMQX Broker，topic: `telemetry/raw/<asset_id>` |
 | **特征工程** | 滑动窗口聚合（均值/标准差/分位数/趋势/Δ），支持离线批量和在线实时两种模式 |
-| **决策树训练** | 基于 scikit-learn DecisionTreeClassifier，输出概率分布和可审计决策路径 |
-| **在线打分** | 实时订阅 MQTT，窗口触发模型预测，含去抖/迟滞逻辑防止 prediction flutter |
+| **多模型训练** | 支持 DecisionTree / XGBoost / LightGBM 三种模型可切换，自动存储特征统计基线用于诊断解释 |
+| **在线打分** | 实时订阅 MQTT，窗口触发模型预测，含去抖/迟滞逻辑防止 prediction flutter，决策树输出完整决策路径，XGBoost/LightGBM 输出基于健康基线的偏差诊断 |
+| **报警规则引擎** | 阈值规则 + 趋势规则 + 组合规则，11 条默认规则（基于 ISO 10816 振动标准等），实时触发并通过 SSE 推送至前端 |
 | **Flask 后端** | MQTT 订阅 → 遥测存储 → 模型打分 → SSE 推送，提供 REST API |
-| **Vue 前端** | 实时看板：设备切换、健康分数环、概率分布、诊断依据时间线、事件日志、诊断报告 |
+| **Vue 前端** | 实时看板：设备切换、健康分数环、概率分布、诊断依据时间线、ECharts 趋势图表、报警面板、事件日志、诊断报告 |
 | **用户认证** | JWT 认证，角色管理（admin/operator），设备级权限控制 |
 | **多设备** | 同时监控 3 台设备（PUMP-001~003），前端自由切换 |
 
@@ -44,10 +45,10 @@
 | 层 | 技术 |
 |----|------|
 | 语言 | Python 3.11+ |
-| 核心库 | numpy, pandas, scikit-learn, joblib |
+| 核心库 | numpy, pandas, scikit-learn, xgboost, lightgbm, joblib |
 | MQTT | paho-mqtt 2.x |
 | 后端 | Flask + flask-cors |
-| 前端 | Vue 3 + Vue Router + Vite |
+| 前端 | Vue 3 + Vue Router + Vite + ECharts |
 | 数据库 | MySQL (认证 + 事件存储) |
 | 消息队列 | EMQX (MQTT Broker) |
 
@@ -59,8 +60,9 @@
 │   ├── cli.py               # 命令行入口（12 个子命令）
 │   ├── schemas.py           # 数据结构（TelemetryPoint / HealthResult）
 │   ├── features.py          # 离线特征工程（窗口聚合）
-│   ├── scoring.py           # OnlineScorer（在线打分 + 去抖 + 决策路径解释）
-│   ├── train.py             # 决策树训练
+│   ├── scoring.py           # OnlineScorer（在线打分 + 去抖 + 多模型解释）
+│   ├── train.py             # 多模型训练（树/xgb/lgb）+ 特征基线统计
+│   ├── alarm.py             # 报警规则引擎（阈值/趋势/组合规则）
 │   ├── api.py               # FastAPI 接口（可选）
 │   ├── mqtt_transport.py    # MQTT 客户端工具
 │   ├── mqtt_collector.py    # MQTT → CSV 采集器
@@ -154,7 +156,12 @@ python -m ihealthsim.cli generate-data-mqtt \
 
 ```bash
 python -m ihealthsim.cli make-features
+# 训练决策树（默认）
 python -m ihealthsim.cli train --feature-set online --max-depth 5 --min-samples-leaf 50
+
+# 训练 XGBoost / LightGBM
+python -m ihealthsim.cli train --feature-set online --model xgb
+python -m ihealthsim.cli train --feature-set online --model lgb
 ```
 
 输出: `data/features.csv`, `models/tree.joblib`
@@ -201,11 +208,27 @@ npm run dev
 
 ### 决策路径解释
 
-模型输出从根节点到叶子节点的完整决策路径，每条规则形如：
+**决策树**：输出从根节点到叶子节点的完整决策路径，每条规则形如：
 ```
 vib_rms_mean > 2.351 (val=3.142) → temp_c_mean <= 55.200 (val=52.100) → ...
 ```
+**XGBoost/LightGBM**：基于训练时存储的 Lv0 健康基线统计，计算当前值的 z-score 偏差，输出诊断链：
+```
+vib_rms_mean>偏高↑(val=4.52, z=+3.1, imp=0.28) -> temp_c_mean>略高(val=72.3, z=+1.5, imp=0.19) -> ...
+```
 前端将其渲染为诊断依据时间线，标注正常/异常。
+
+### 报警规则引擎
+
+内置 11 条默认规则（可扩展），实时评估遥测快照：
+
+| 类型 | 说明 | 示例 |
+|------|------|------|
+| 阈值 (threshold) | 单点位超过阈值 | vib_rms > 4.5 mm/s → warning |
+| 趋势 (trend) | N 窗口内持续上升/下降 | temp_c 5 窗口内上升 5% → warning |
+| 组合 (combination) | 多条件 AND/OR | 高温+高振动同时触发 → critical |
+
+报警通过 SSE 实时推送，前端以高亮面板展示，60s 自动解除。
 
 ## MQTT 消息格式
 
@@ -244,6 +267,7 @@ Topic: `telemetry/raw/<asset_id>`
 | GET | `/api/simulate/status` | 仿真运行状态 | Token |
 | GET | `/api/events?asset_id=xxx&limit=50` | 查询事件日志 | Token |
 | POST | `/api/events` | 创建事件记录 | Token |
+| GET | `/api/trends?asset_id=xxx` | 健康历史趋势数据 | Token |
 
 ### 管理
 
@@ -270,8 +294,9 @@ python -m ihealthsim.cli generate-data-mqtt --seconds 7200
 # 提取特征
 python -m ihealthsim.cli make-features
 
-# 训练决策树
-python -m ihealthsim.cli train --max-depth 5 --feature-set online
+# 训练模型（tree/xgb/lgb 可选）
+python -m ihealthsim.cli train --max-depth 5 --feature-set online --model tree
+python -m ihealthsim.cli train --feature-set online --model xgb
 
 # 在线订阅打分
 python -m ihealthsim.cli live --duration-s 60
