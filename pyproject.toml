@@ -1,0 +1,11 @@
+[project]
+name = "ihealthsim"
+version = "0.1.0"
+description = "Industrial equipment health assessment demo: full simulation + decision tree"
+requires-python = ">=3.11"
+
+[tool.setuptools]
+package-dir = {"" = "src"}
+
+[tool.setuptools.packages.find]
+where = ["src"]
